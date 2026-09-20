@@ -1,0 +1,22 @@
+[Unit]
+Description=SmartHome local server and outbound gateway bridge
+After=network.target
+
+[Service]
+Type=simple
+User=khaled
+WorkingDirectory=/home/khaled/smarthome/current
+EnvironmentFile=/home/khaled/smarthome/hub.env
+ExecStart=/home/khaled/smarthome/runtime/node/bin/node local-server.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/khaled/smarthome/data
+
+[Install]
+WantedBy=multi-user.target
