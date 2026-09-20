@@ -78,6 +78,10 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   const target = { homeName: 'TestHome', deviceID: id, varName: 'power' };
   assert.equal(await request(remote, 'AddVariable', { ...target, varType: 'int', varValue: '0', Scheduled: false,
     OnTime: 0, OffTime: 0, OnValue: 1, OffValue: 0 }), 'OK');
+  const scheduled = await request(remote, 'SaveSchedule', { ...target, requestId: 'save-1',
+    time: '03:21', days: [0, 1, 2, 3, 4, 5, 6], timeZone: 'Europe/Berlin', varType: 'int', varValue: '1' });
+  assert.equal(scheduled.status, 'OK'); assert.equal(scheduled.requestId, 'save-1');
+  assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-1' })).schedules.length, 1);
   const device = socket(localUrl); sockets.push(device); await waitEvent(device, 'connect');
   assert.equal(await request(device, 'DeviceConnect', target), 'OK');
   // Device registration is verified through status before issuing commands.
@@ -116,7 +120,9 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   assert.equal((await request(remote, 'GetVariableValueFromServer', target)).Value, '4');
   const persisted = await request(remote, 'GetAllDevices', target);
   assert.equal(persisted.devices[0].Status, 'Not_Connected');
+  assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-2' })).schedules.length, 1);
   assert.equal((await request(remote, 'DeleteDeviceVariable', target)).status, 'OK');
+  assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-3' })).schedules.length, 0);
   assert.equal((await request(remote, 'DeleteDevice', target)).status, 'OK');
   assert.equal(await request(remote, 'DeleteHome', { homeName: 'TestHome' }), 'OK');
 });

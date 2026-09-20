@@ -70,7 +70,8 @@ function createGateway({ hubToken, appToken }) {
     attach(phone);
     for (const event of requests) socket.on(event, payload => {
       // Never queue device commands across an outage or replay them later.
-      if (!hub || !phone.ready) return socket.emit(event, 'Hub_Offline');
+      if (!hub || !phone.ready) return socket.emit(event, payload?.requestId
+        ? { requestId: payload.requestId, status: 'Error', message: 'Home hub is offline' } : 'Hub_Offline');
       hub.emit('PhoneRequest', { id: socket.id, event, payload });
     });
     socket.on('disconnect', () => {

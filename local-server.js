@@ -18,6 +18,32 @@ var ScheduleList = new Map();
 
 const { SQLiteClient } = require('./sqlite-store');
 const client = new SQLiteClient(process.env.DATA_FILE || './data/smarthome.sqlite');
+const { Scheduler } = require('./scheduler');
+const scheduler = new Scheduler(client.sql, {
+	resolveTarget: async target => {
+		const device = await GetDevicesCollection(target.homeName).findOne({ id: target.deviceID });
+		return device ? GetHomeDb(target.homeName).collection('Var_' + device.Name).findOne({ VarName: target.varName }) : null;
+	},
+	dispatch: async target => {
+		const device = await GetDevicesCollection(target.homeName).findOne({ id: target.deviceID });
+		if (!device) return 'missing_target';
+		const variables = GetHomeDb(target.homeName).collection('Var_' + device.Name);
+		if (!await variables.findOne({ VarName: target.varName })) return 'missing_target';
+		const connection = ConnectedDevicesList.get(MakeConnectedDeviceKey(target.homeName, target.deviceID));
+		if (!connection || !connection.Socket.connected) return 'skipped_offline';
+		const payload = { homeName: target.homeName, deviceID: target.deviceID,
+			varName: target.varName, varType: target.varType, varValue: target.varValue };
+		connection.Socket.emit('PhoneWriteVariable', payload);
+		await UpdateVariableValue(target.homeName, device.Name, target.varName, target.varValue);
+		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('DeviceWriteVariable', payload);
+		return 'sent'; // Transport dispatch, not a hardware acknowledgement.
+	},
+	onChange: target => {
+		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('SchedulesChanged', {
+			homeName: target.homeName, deviceID: target.deviceID, varName: target.varName
+		});
+	}
+});
 
 function GetMetaDb() {
 	return client.db("SmartHomeMeta");
@@ -149,6 +175,7 @@ async function DeleteHome(homeName) {
 		}
 
 		const homeDb = client.db(homeName);
+		scheduler.removeTarget(homeName);
 
 		const collections = await homeDb.listCollections({}, { nameOnly: true }).toArray();
 
@@ -221,6 +248,7 @@ async function DeleteDevice(homeName, deviceId) {
 		const devicesCol = GetDevicesCollection(homeName);
 
 		await devicesCol.deleteOne({ id: deviceId });
+		scheduler.removeTarget(homeName, deviceId);
 
 		// delete variables collection for this device
 		const varCollectionName = "Var_" + deviceName;
@@ -264,6 +292,7 @@ async function DeleteDeviceVariable(homeName, deviceId, varName) {
 
 		const variablesCol = GetHomeDb(homeName).collection("Var_" + deviceName);
 		await variablesCol.deleteOne({ VarName: varName });
+		scheduler.removeTarget(homeName, deviceId, varName);
 
 		return { status: 0, deviceName: deviceName };
 	} catch (err) {
@@ -532,6 +561,7 @@ app.get('/health', (_req, res) => res.json({ service: 'SmartHome local', storage
 let bridge;
 run().then(() => server.listen(PORT, process.env.BIND_ADDRESS || '0.0.0.0', () => {
 	console.log('Local SmartHome server listening on ' + PORT);
+	scheduler.start();
 	if (process.env.GATEWAY_URL) bridge = require('./bridge').startBridge({
 		gatewayUrl: process.env.GATEWAY_URL,
 		hubToken: process.env.HUB_TOKEN,
@@ -540,6 +570,7 @@ run().then(() => server.listen(PORT, process.env.BIND_ADDRESS || '0.0.0.0', () =
 })).catch(error => { console.error(error); process.exit(1); });
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+	scheduler.stop();
 	if (bridge) bridge.close();
 	io.close(() => client.close().then(() => process.exit(0)));
 });
@@ -548,6 +579,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 // socket.IO
 
 io.on("connection", function (socket) {
+	scheduler.attach(socket);
 	console.log("client connected id = " + socket.id);
 	
 	

@@ -41,7 +41,8 @@ function startBridge({ gatewayUrl, hubToken, localUrl }) {
     if (!data || !requests.includes(data.event)) return;
     const phone = sessions.get(data.id);
     if (!phone || !phone.connected) {
-      hub.emit('PhoneResponse', { id: data.id, event: data.event, payload: 'Hub_Offline' });
+      hub.emit('PhoneResponse', { id: data.id, event: data.event, payload: data.payload?.requestId
+        ? { requestId: data.payload.requestId, status: 'Error', message: 'Home hub is offline' } : 'Hub_Offline' });
       return;
     }
     // The relay owns a unique phone ID, independent of the Android device ID.
