@@ -6,7 +6,7 @@ Events are saved on the Pi in `conditional_events` in the existing SQLite databa
 
 Select a home on Home, then open **Events** in the bottom navigation. Tap **+**, enter a name, and add one or more conditions under **If** and actions under **Then**. Each row selects a device and variable from that home, then a typed value. Boolean variables offer ON/OFF; numeric variables use a numeric keyboard; strings accept text (including an empty string).
 
-AND joins conditions in the same group. OR starts a new group. For example, A AND B OR C means `(A AND B) OR C`. Any group matching triggers every action, in listed order. Conditions use equality only. Tap a row to edit it, or its trash icon to remove it. At least one condition and one action are required.
+AND joins conditions in the same group. OR starts a new group. For example, A AND B OR C means `(A AND B) OR C`. Any group matching triggers every action, in listed order. Numeric conditions support =, >, >=, < and <=. Text and boolean conditions use equality. Tap a row to edit it, or its trash icon to remove it. At least one condition and one action are required.
 
 New events default to paused. Enable in the editor or use the switch in the Events list. Events can be edited and deleted from that list. Editor drafts survive normal Android configuration changes.
 
@@ -42,4 +42,4 @@ Run `npm test` using Node 24. Tests cover precedence, typed equality, transition
 
 `node scripts/test-physical-event.js` is specifically for TestDev_1 (ID 1007) and its in-memory slider variables. It reads/restores their values and removes its temporary rule. It must not be repurposed for actuator variables without reviewing the targets.
 
-The deployed Pi release is `/home/khaled/smarthome/releases/events-v1`, selected by `current`. Backup before deployment: `/home/khaled/smarthome/backups/before-events-20260921.sqlite`. Heroku gateway release: v6. Include **events.js** along with scheduler.js and the other modules when packaging future Pi updates. Use the existing SQLite backup script to include both events and schedules.
+The initial Events release was `/home/khaled/smarthome/releases/events-v1`. See MULTI_HOME.md for the current release and cloud configuration ownership. Backup before deployment: `/home/khaled/smarthome/backups/before-events-20260921.sqlite`. Heroku gateway release: v6. Include **events.js** along with scheduler.js and the other modules when packaging future Pi updates. Use the existing SQLite backup script to include both events and schedules.
