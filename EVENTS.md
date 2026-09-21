@@ -20,7 +20,7 @@ New events default to paused. Enable in the editor or use the switch in the Even
 - An offline action target is skipped without queuing. Other actions continue. A last-run result records each action as sent, skipped_offline, missing_target or failed. Sent indicates transport dispatch, not a hardware acknowledgment.
 - The transition is recorded before dispatch, so a restart cannot repeat a claimed event. A crash between claim and dispatch can miss an action. A crash mid-run can leave the last result as running; it is not replayed.
 - Enabled rules with direct variable dependency cycles are rejected, including cycles across multiple events. Disabled events may be saved but cannot be enabled until the cycle is resolved.
-- A five-second per-event cooldown limits feedback from firmware-derived variables; transitions within that window are consumed without replay.
+- Every false-to-true condition transition is queued, including rapid repeated transitions. There is no cooldown that discards triggers. Duplicate reports while a condition remains true do not repeat actions. All matching events run in order, even when new reports arrive while an action is pending. Configured event cycles remain rejected; avoid feedback loops implemented indirectly in firmware.
 - Removing a referenced variable, device or home removes events using it. Removing a dashboard widget does not remove an event.
 
 ## Protocol

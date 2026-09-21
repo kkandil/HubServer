@@ -162,9 +162,9 @@ class EventEngine {
       if (!matched || row.matched) continue;
       const at = this.clock().toISOString();
       const results = [];
-      // A short cooldown also limits loops involving firmware-derived variables.
-      const previous = row.last_run && JSON.parse(row.last_run);
-      if (previous && Date.parse(at) - Date.parse(previous.at) < 5000) continue;
+      // Every false-to-true transition is significant, even during a rapid toggle.
+      // Duplicate reports are suppressed by matched; configured cycles are
+      // rejected on save. A time-based cooldown would silently consume edges.
       this.sql.prepare('UPDATE conditional_events SET last_run=? WHERE id=?').run(JSON.stringify({ at, status: 'running', results: [] }), row.id);
       for (const action of rule.actions) {
         let status;
