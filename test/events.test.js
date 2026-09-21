@@ -65,9 +65,16 @@ test('validation, loops including enabling a dormant loop, and target cleanup', 
   await assert.rejects(f.engine.save({ ...first,homeName:'Other' }),/not found/);
   await f.engine.removeTarget(h.homeName,1,'out'); assert.equal(f.engine.list(h).length,0);
 });
-test('queued rapid reports preserve both edges and actions continue after a dispatch failure', async t => {
+test('queued rapid reports preserve both edges', async t => {
   const f=setup(t); await f.engine.save(input());
   await Promise.all([f.change('a','1'),f.change('a','0')]);
   assert.equal(f.sent.length,1); f.advance(); await f.change('a','1'); assert.equal(f.sent.length,2);
   await f.engine.removeTarget(h.homeName); assert.equal(f.engine.list(h).length,0);
+});
+test('one failed action does not prevent other actions and partial result is persisted', async t => {
+  const f=setup(t); let called=0;
+  f.engine.dispatch=async () => { if (++called===1) throw new Error('Device failure'); return 'sent'; };
+  await f.engine.save(input([item('a')],[item('out'),item('out2')])); await f.change('a','1');
+  assert.equal(called,2); const last=f.engine.list(h)[0].lastRun;
+  assert.equal(last.status,'partial'); assert.deepEqual(last.results.map(r=>r.status),['failed','sent']);
 });
