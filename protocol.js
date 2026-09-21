@@ -5,7 +5,8 @@ const requests = [
   'PhoneConnect', 'AddNewHome', 'GetAllHomes', 'DeleteHome', 'AddDevice',
   'DeleteDevice', 'AddVariable', 'DeleteDeviceVariable', 'PhoneWriteVariable',
   'RequestVariableValue', 'GetVariableValueFromServer', 'GetDeviceStatus',
-  'GetAllDevices', 'GetDeviceVariables', 'GetSchedules', 'SaveSchedule', 'DeleteSchedule'
+  'GetAllDevices', 'GetDeviceVariables', 'GetSchedules', 'SaveSchedule', 'DeleteSchedule',
+  'GetEvents', 'SaveEvent', 'DeleteEvent', 'SetEventEnabled', 'GetEventVariables'
 ];
-const responses = [...requests, 'DeviceStatus', 'DeviceDeleted', 'DeviceWriteVariable', 'SchedulesChanged'];
+const responses = [...requests, 'DeviceStatus', 'DeviceDeleted', 'DeviceWriteVariable', 'SchedulesChanged', 'EventsChanged'];
 module.exports = { requests, responses };

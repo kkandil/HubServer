@@ -105,10 +105,22 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   await waitEvent(remote2, 'HubStatus', x => x.online);
   const [a, b] = await Promise.all([request(remote, 'GetAllDevices', target), request(remote2, 'GetDeviceVariables', target)]);
   assert.equal(a.devices[0].id, id); assert.equal(b.variables[0].VarName, 'power');
+  const actionTarget = { ...target, varName: 'eventOutput' };
+  assert.equal(await request(remote, 'AddVariable', { ...actionTarget, varType: 'int', varValue: '0', Scheduled: false,
+    OnTime: 0, OffTime: 0, OnValue: 1, OffValue: 0 }), 'OK');
+  const catalog = await request(remote, 'GetEventVariables', { homeName: 'TestHome', requestId: 'catalog' });
+  assert.equal(catalog.status, 'OK'); assert.equal(catalog.devices[0].variables.length, 2);
+  const eventInput = { homeName: 'TestHome', requestId: 'save-event', name: 'Automatic output', enabled: true,
+    conditions: [{ deviceID: id, varName: 'power', varValue: '4' }],
+    actions: [{ deviceID: id, varName: 'eventOutput', varValue: '9' }] };
+  const eventSaved = await request(remote, 'SaveEvent', eventInput);
+  assert.equal(eventSaved.status, 'OK'); assert.equal(eventSaved.requestId, 'save-event');
+  const eventCommand = waitEvent(device, 'PhoneWriteVariable', x => x.varName === 'eventOutput');
   const offline = waitEvent(remote, 'HubStatus', x => !x.online);
   bridge.close(); await offline;
   assert.equal(await request(remote, 'PhoneWriteVariable', { ...target, varType: 'int', varValue: 'BAD' }), 'Hub_Offline');
   assert.equal(await request(device, 'DeviceWriteVariable', { ...target, varType: 'int', varValue: '4' }), 'OK');
+  assert.equal((await eventCommand).varValue, '9'); // Runs locally while gateway is disconnected.
   ready = waitEvent(remote, 'HubStatus', x => x.online);
   bridge = startBridge({ gatewayUrl, hubToken: 'hub-test-secret', localUrl }); await ready;
   assert.equal((await request(remote, 'GetVariableValueFromServer', target)).Value, '4');
@@ -121,8 +133,12 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   const persisted = await request(remote, 'GetAllDevices', target);
   assert.equal(persisted.devices[0].Status, 'Not_Connected');
   assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-2' })).schedules.length, 1);
+  const persistedEvents = await request(remote, 'GetEvents', { homeName: 'TestHome', requestId: 'events-list' });
+  assert.equal(persistedEvents.events.length, 1); assert.equal(persistedEvents.events[0].lastRun.status, 'sent');
+  assert.equal((await request(remote, 'SetEventEnabled', { homeName: 'TestHome', id: eventSaved.event.id, enabled: false })).status, 'OK');
   assert.equal((await request(remote, 'DeleteDeviceVariable', target)).status, 'OK');
   assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-3' })).schedules.length, 0);
+  assert.equal((await request(remote, 'GetEvents', { homeName: 'TestHome' })).events.length, 0);
   assert.equal((await request(remote, 'DeleteDevice', target)).status, 'OK');
   assert.equal(await request(remote, 'DeleteHome', { homeName: 'TestHome' }), 'OK');
 });

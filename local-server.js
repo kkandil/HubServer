@@ -19,10 +19,12 @@ var ScheduleList = new Map();
 const { SQLiteClient } = require('./sqlite-store');
 const client = new SQLiteClient(process.env.DATA_FILE || './data/smarthome.sqlite');
 const { Scheduler } = require('./scheduler');
-const scheduler = new Scheduler(client.sql, {
+const automationHandlers = {
 	resolveTarget: async target => {
 		const device = await GetDevicesCollection(target.homeName).findOne({ id: target.deviceID });
-		return device ? GetHomeDb(target.homeName).collection('Var_' + device.Name).findOne({ VarName: target.varName }) : null;
+		if (!device) return null;
+		const variable = await GetHomeDb(target.homeName).collection('Var_' + device.Name).findOne({ VarName: target.varName });
+		return variable ? { ...variable, deviceName: device.Name } : null;
 	},
 	dispatch: async target => {
 		const device = await GetDevicesCollection(target.homeName).findOne({ id: target.deviceID });
@@ -42,6 +44,20 @@ const scheduler = new Scheduler(client.sql, {
 		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('SchedulesChanged', {
 			homeName: target.homeName, deviceID: target.deviceID, varName: target.varName
 		});
+	}
+};
+const scheduler = new Scheduler(client.sql, automationHandlers);
+const { EventEngine } = require('./events');
+const events = new EventEngine(client.sql, {
+	...automationHandlers,
+	catalog: async homeName => {
+		const devices = await GetDevicesCollection(homeName).find().toArray();
+		return Promise.all(devices.map(async device => ({ deviceID: device.id, deviceName: device.Name,
+			variables: (await GetHomeDb(homeName).collection('Var_' + device.Name).find().toArray())
+				.map(v => ({ varName: v.VarName, varType: v.Type })) })));
+	},
+	onChange: rule => {
+		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('EventsChanged', { homeName: rule.homeName });
 	}
 });
 
@@ -86,6 +102,7 @@ async function run() {
 					{ $set: { Status: 'Not_Connected' } });
 			}
 		}
+		await events.start();
 		console.log('Local SQLite store ready');
 	} catch (err) {
 		throw err;
@@ -176,6 +193,7 @@ async function DeleteHome(homeName) {
 
 		const homeDb = client.db(homeName);
 		scheduler.removeTarget(homeName);
+		await events.removeTarget(homeName);
 
 		const collections = await homeDb.listCollections({}, { nameOnly: true }).toArray();
 
@@ -249,6 +267,7 @@ async function DeleteDevice(homeName, deviceId) {
 
 		await devicesCol.deleteOne({ id: deviceId });
 		scheduler.removeTarget(homeName, deviceId);
+		await events.removeTarget(homeName, deviceId);
 
 		// delete variables collection for this device
 		const varCollectionName = "Var_" + deviceName;
@@ -293,6 +312,7 @@ async function DeleteDeviceVariable(homeName, deviceId, varName) {
 		const variablesCol = GetHomeDb(homeName).collection("Var_" + deviceName);
 		await variablesCol.deleteOne({ VarName: varName });
 		scheduler.removeTarget(homeName, deviceId, varName);
+		await events.removeTarget(homeName, deviceId, varName);
 
 		return { status: 0, deviceName: deviceName };
 	} catch (err) {
@@ -417,6 +437,8 @@ async function UpdateVariableValue(homeName, deviceName, varName, varValue) {
 			},
 		};
 		await variablesCol.updateOne(filter, updateDocument);
+		const device = await GetDevicesCollection(homeName).findOne({ Name: deviceName });
+		if (device) events.changed({ homeName, deviceID: device.id, varName, varValue }).catch(error => console.error('Event evaluation:', error.message));
 		return 0;
 	} catch (err) {
 		console.error(`UpdateVariableValue: ${err}`);
@@ -580,6 +602,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 
 io.on("connection", function (socket) {
 	scheduler.attach(socket);
+	events.attach(socket);
 	console.log("client connected id = " + socket.id);
 	
 	
