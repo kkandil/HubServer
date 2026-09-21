@@ -92,6 +92,7 @@ class Scheduler {
     this.running = true;
     try {
       for (const row of this.sql.prepare('SELECT * FROM schedules WHERE eligible_after<=? ORDER BY id').all(now.getTime())) {
+        if(process.env.HUB_HOME && row.home!==process.env.HUB_HOME) continue;
         const schedule = JSON.parse(row.body);
         const local = this.localTime(now, schedule.timeZone);
         if (local.time !== schedule.time || !schedule.days.includes(local.day) || row.last_key === local.key) continue;

@@ -60,6 +60,7 @@ const events = new EventEngine(client.sql, {
 		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('EventsChanged', { homeName: rule.homeName });
 	}
 });
+const homeSync=process.env.HUB_HOME?new (require('./home-sync').HomeSync)({client,events,scheduler,connections:ConnectedDevicesList,homeName:process.env.HUB_HOME,token:process.env.HUB_TOKEN}):null;
 
 function GetMetaDb() {
 	return client.db("SmartHomeMeta");
@@ -588,6 +589,7 @@ run().then(() => server.listen(PORT, process.env.BIND_ADDRESS || '0.0.0.0', () =
 		gatewayUrl: process.env.GATEWAY_URL,
 		hubToken: process.env.HUB_TOKEN,
 		localUrl: 'http://127.0.0.1:' + PORT
+		,homeName: process.env.HUB_HOME
 	});
 })).catch(error => { console.error(error); process.exit(1); });
 
@@ -601,6 +603,17 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 // socket.IO
 
 io.on("connection", function (socket) {
+	if(homeSync) {
+		homeSync.attach(socket);
+		const on=socket.on.bind(socket), edits=require('./config-store').edits;
+		socket.on=(event,listener)=>on(event,(...args)=>{
+			const input=args[0];
+			if(event==='GetAllHomes') return socket.emit(event,{homes:[process.env.HUB_HOME],homeStatuses:[{homeName:process.env.HUB_HOME,online:true}]});
+			const message=input?.homeName && input.homeName!==process.env.HUB_HOME?'This hub belongs to '+process.env.HUB_HOME:edits.has(event)?'Use the Heroku gateway to edit home configuration; local device control remains available':null;
+			if(message) return socket.emit(event,input?.requestId || ['AddDevice','DeleteDevice','DeleteDeviceVariable'].includes(event)?{status:'Error',requestId:input?.requestId,message}:message);
+			return listener(...args);
+		});
+	}
 	scheduler.attach(socket);
 	events.attach(socket);
 	console.log("client connected id = " + socket.id);

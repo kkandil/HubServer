@@ -3,13 +3,30 @@
 const connect = require('socket.io-client');
 const { requests, responses } = require('./protocol');
 
-function startBridge({ gatewayUrl, hubToken, localUrl }) {
+function startBridge({ gatewayUrl, hubToken, localUrl, homeName }) {
   if (!hubToken) throw new Error('HUB_TOKEN is required when GATEWAY_URL is set');
   const sessions = new Map();
   const hub = connect(gatewayUrl.replace(/\/$/, '') + '/hub', {
     query: { token: hubToken }, transports: ['websocket'], forceNew: true,
     reconnection: true, reconnectionDelay: 2000, reconnectionDelayMax: 30000
   });
+  const syncSocket=homeName?connect(localUrl,{forceNew:true,transports:['websocket'],query:{syncToken:hubToken}}):null;
+  let pendingConfig;
+  const applyConfig=doc=>{
+    pendingConfig=doc;
+    if(!syncSocket?.connected || doc._id!==homeName)return;
+    syncSocket.timeout(15000).emit('ApplyHomeConfig',doc,(err,result)=>{
+      if(err || result?.status!=='OK') hub.emit('ConfigError',{message:result?.message||'Local configuration timeout'});
+      else {hub.emit('ConfigApplied',result);runtime();}
+    });
+  };
+  hub.on('HomeConfig',applyConfig);
+  if(syncSocket) {
+    syncSocket.on('connect',()=>{if(pendingConfig)applyConfig(pendingConfig);});
+    syncSocket.on('disconnect',()=>hub.emit('LocalUnavailable'));
+  }
+  const runtime=()=>{if(syncSocket?.connected && hub.connected)syncSocket.timeout(10000).emit('ReadHomeRuntime',{},(err,result)=>{if(!err)hub.emit('HomeRuntime',result);});};
+  const runtimeTimer=homeName?setInterval(runtime,10000):null;
   function closePhone(id) {
     const phone = sessions.get(id);
     if (phone) { sessions.delete(id); phone.disconnect(); }
@@ -31,6 +48,7 @@ function startBridge({ gatewayUrl, hubToken, localUrl }) {
     });
     for (const event of responses) phone.on(event, payload => {
       if (hub.connected) hub.emit('PhoneResponse', { id: data.id, event, payload });
+      if(homeName && ['EventsChanged','DeviceStatus','DeviceWriteVariable'].includes(event)) setTimeout(runtime,100);
     });
     phone.on('disconnect', () => {
       if (hub.connected && sessions.get(data.id) === phone) hub.emit('PhoneUnavailable', { id: data.id });
@@ -49,6 +67,6 @@ function startBridge({ gatewayUrl, hubToken, localUrl }) {
     const payload = data.event === 'PhoneConnect' ? { phoneID: 'gateway:' + data.id } : data.payload;
     phone.emit(data.event, payload);
   });
-  return { close() { hub.disconnect(); for (const id of [...sessions.keys()]) closePhone(id); } };
+  return { close() { clearInterval(runtimeTimer); if(syncSocket)syncSocket.disconnect(); hub.disconnect(); for (const id of [...sessions.keys()]) closePhone(id); } };
 }
 module.exports = { startBridge };

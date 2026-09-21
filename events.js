@@ -14,13 +14,19 @@ function equal(actual, expected, type) {
   }
   return String(actual) === expected;
 }
+function compare(actual, expected, type, operator = '=') {
+  if (operator === '=') return equal(actual, expected, type);
+  if (!['int', 'float'].includes(type) || actual == null || String(actual).trim() === '' || !Number.isFinite(Number(actual))) return false;
+  const a = Number(actual), b = Number(expected);
+  return operator === '>' ? a > b : operator === '>=' ? a >= b : operator === '<' ? a < b : operator === '<=' ? a <= b : false;
+}
 function matches(rule, values) {
   // AND binds within a group; OR separates alternative groups.
   let group = true, result = false;
   for (let i = 0; i < rule.conditions.length; i++) {
     const c = rule.conditions[i];
     if (i && c.join === 'OR') { result = result || group; group = true; }
-    group = group && equal(values.get(key({ ...c, homeName: rule.homeName })), c.varValue, c.varType);
+    group = group && compare(values.get(key({ ...c, homeName: rule.homeName })), c.varValue, c.varType, c.operator);
   }
   return result || group;
 }
@@ -76,8 +82,10 @@ class EventEngine {
     if (['int', 'float'].includes(type) && (!value.trim() || !Number.isFinite(Number(value)))) throw new Error('Enter a valid number');
     if (['bool', 'boolean'].includes(type) && !['0', '1', 'true', 'false'].includes(value)) throw new Error('Select ON or OFF');
     if (condition && index > 0 && !['AND', 'OR'].includes(item.join)) throw new Error('Choose AND or OR');
+    const operator = item.operator || '=';
+    if (condition && (!['=', '>', '>=', '<', '<='].includes(operator) || (operator !== '=' && !['int','float'].includes(type)))) throw new Error('Ordering comparisons require a numeric variable');
     return { deviceID: item.deviceID, deviceName: target.deviceName || String(item.deviceID), varName: item.varName,
-      varType: type, varValue: value, ...(condition ? { join: index ? item.join : 'AND' } : {}) };
+      varType: type, varValue: value, ...(condition ? { join: index ? item.join : 'AND', operator } : {}) };
   }
   checkCycles(rule) {
     if (!rule.enabled) return;
@@ -186,4 +194,4 @@ class EventEngine {
     });
   }
 }
-module.exports = { EventEngine, equal, matches, key };
+module.exports = { EventEngine, equal, compare, matches, key };
