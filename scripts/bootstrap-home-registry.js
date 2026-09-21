@@ -17,11 +17,13 @@ async function main(){
     const sql=new DatabaseSync(path.join(privateDir,'before-multi-home.sqlite'),{readOnly:true});
     let maxId=1000;
     for(const {db:home} of sql.prepare("SELECT db FROM collections WHERE name='Devices'").all()){
-      const devices=sql.prepare("SELECT body FROM documents WHERE db=? AND collection='Devices'").all(home).map(r=>JSON.parse(r.body)).map(d=>{
+      const sourceDevices=sql.prepare("SELECT body FROM documents WHERE db=? AND collection='Devices'").all(home).map(r=>JSON.parse(r.body));
+      const devices=sourceDevices.map(d=>{
         maxId=Math.max(maxId,d.id);return {id:d.id,Name:d.Name,variables:sql.prepare('SELECT body FROM documents WHERE db=? AND collection=?').all(home,'Var_'+d.Name).map(r=>JSON.parse(r.body))};
       });
       const events=sql.prepare('SELECT body FROM conditional_events WHERE home=?').all(home).map(r=>JSON.parse(r.body));
       await db.collection('homes').updateOne({_id:home},{$setOnInsert:{revision:1,appliedRevision:0,devices,events,lastSeen:null,receipts:[]}},{upsert:true});
+      await db.collection('homes').updateOne({_id:home,runtime:{$exists:false}},{$set:{runtime:{homeName:home,devices:sourceDevices,events:sql.prepare('SELECT id,last_run FROM conditional_events WHERE home=?').all(home).map(r=>({id:r.id,lastRun:r.last_run?JSON.parse(r.last_run):null}))}}});
       if(process.argv.includes('--refresh-seed')) {
         const result=await db.collection('homes').updateOne({_id:home,revision:1,appliedRevision:0},{$set:{devices,events}});
         if(!result.matchedCount)throw new Error('Registry already active; refusing to overwrite '+home);
