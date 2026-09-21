@@ -74,7 +74,7 @@ class ConfigStore {
     }
     const d=await this.repo.get(input?.homeName); if(!d || d.deleted) throw new Error('Home not found');
     const header={homeName:d._id,revision:d.revision,pending:d.revision>(d.appliedRevision||0)};
-    const devices=d.devices.map(device=>{const r=d.runtime?.devices?.find(x=>x.id===device.id)||{}; return {...device,...r,id:device.id,Name:device.Name,Status:online(d._id)?(r.Status||'Not_Connected'):'Not_Connected'};});
+    const devices=d.devices.map(device=>{const r=d.runtime?.devices?.find(x=>x.id===device.id)||{}; const status=online(d._id)?(r.Status||'Not_Connected'):'Not_Connected';return {...device,...r,id:device.id,Name:device.Name,Status:status,Time:status==='Connected'?r.ConnectTime||'NA':r.DisconnectTime||r.ConnectTime||'NA'};});
     const device=devices.find(x=>x.id===Number(input.deviceID));
     if(event==='GetAllDevices') return {...header,devices:devices.map(({variables,...d})=>d)};
     if(event==='GetDeviceStatus') return {...header,deviceID:input.deviceID,DeviceStatus:device?.Status||'Not_Connected',Time:device?.Status==='Connected'?device.ConnectTime||d.lastSeen||'NA':device?.DisconnectTime||device?.ConnectTime||d.lastSeen||'NA'};

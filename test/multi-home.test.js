@@ -49,6 +49,7 @@ test('two independent hubs, offline edits synchronize before live traffic, recon
   const phone=require('legacy-socket-client')(url,{query:{token:'app'},transports:['websocket'],forceNew:true});sockets.push(phone);await wait(phone,'HubStatus',s=>s.gateway);
   const homes=await request(phone,'GetAllHomes');assert.equal(homes.homes.length,2);assert.ok(homes.homeStatuses.every(h=>!h.online));
   const add=await request(phone,'AddDevice',{homeName:'Germany',deviceName:'Offline_created'});assert.equal(add.status,'OK');
+  const statusReply=wait(phone,'DeviceStatus');phone.emit('GetDeviceStatus',{homeName:'Germany',deviceID:add.deviceID});assert.equal((await statusReply).DeviceStatus,'Not_Connected');
   for(const varName of ['sensor','output'])assert.equal(await request(phone,'AddVariable',{homeName:'Germany',deviceID:add.deviceID,varName,varType:'int',varValue:'0'}),'OK');
   const rule={homeName:'Germany',name:'Offline event',enabled:true,conditions:[{deviceID:add.deviceID,varName:'sensor',operator:'>',varValue:'5'}],actions:[{deviceID:add.deviceID,varName:'output',varValue:'1'}]};
   const saved=await request(phone,'SaveEvent',rule);assert.equal(saved.status,'OK');

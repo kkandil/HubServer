@@ -46,7 +46,7 @@ function createMultiGateway({store,appToken,bindings}) {
     for(const event of requests) s.on(event,safe(async input=>{
       try {
         if(event==='PhoneConnect') return s.emit(event,'OK');
-        if(reads.has(event)) return s.emit(event,{status:'OK',requestId:input?.requestId,...await store.read(event,input,online)});
+        if(reads.has(event)) return s.emit(event==='GetDeviceStatus'?'DeviceStatus':event,{status:'OK',requestId:input?.requestId,...await store.read(event,input,online)});
         if(edits.has(event)) {
           const result=await store.edit(event,input); s.emit(event,['AddNewHome','DeleteHome','AddVariable'].includes(event)?'OK':{...result,requestId:input?.requestId});
           io.emit('ConfigChanged',{homeName:input.homeName,revision:result.revision}); io.emit('EventsChanged',{homeName:input.homeName});
