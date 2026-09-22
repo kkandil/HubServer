@@ -609,7 +609,13 @@ io.on("connection", function (socket) {
 	scheduler.attach(socket);
 	events.attach(socket);
 	socket.on('GetVariableSnapshot', input => {
-		try {socket.emit('GetVariableSnapshot',{status:'OK',requestId:input?.requestId,...variableState.snapshot(input?.homeName)});}
+		const started=Date.now();
+        console.log(`GetVariableSnapshot received: home=${input?.homeName} requestId=${input?.requestId}`);
+        try {
+            const snapshot=variableState.snapshot(input?.homeName);
+            socket.emit('GetVariableSnapshot',{status:'OK',requestId:input?.requestId,...snapshot});
+            console.log(`GetVariableSnapshot sent: home=${input?.homeName} requestId=${input?.requestId} variables=${snapshot.values.length} revision=${snapshot.revision} elapsedMs=${Date.now()-started}`);
+        }
 		catch(e){socket.emit('GetVariableSnapshot',{status:'Error',requestId:input?.requestId,message:e.message});}
 	});
 	console.log("client connected id = " + socket.id);
@@ -971,6 +977,7 @@ io.on("connection", function (socket) {
 	// Phone writes variable to device
 
 	socket.on('PhoneWriteVariable', async function (data) {
+        console.log(`PhoneWriteVariable received: home=${data?.homeName} device=${data?.deviceID} variable=${data?.varName} requestId=${data?.requestId || 'legacy'}`);
 		const reply=(message,update)=>socket.emit('PhoneWriteVariable',data?.requestId?{status:message==='OK'?'OK':'Error',message,requestId:data.requestId,...update}:message);
 		if (!data ||
 			data.hasOwnProperty('homeName') == false ||

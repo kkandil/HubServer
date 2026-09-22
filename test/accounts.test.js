@@ -87,6 +87,23 @@ test('gateway isolates home lists, rejects legacy keys and checks each edit on a
   assert.equal((await request(s,'GetEvents',{homeName:'Private',requestId:'x'})).status,'Error');
   for(const event of ['AddDevice','SaveEvent','SaveSchedule','DeleteSchedule'])assert.equal((await request(s,event,{homeName:'Shared',requestId:event})).status,'Error');
   const control=await request(s,'PhoneWriteVariable',{homeName:'Shared',requestId:'control'});assert.match(control.message,/offline/); // authorization passed
+  // A slow catalog request must not block live writes or snapshots. Keep the
+  // catalog deliberately unresolved until both live requests have completed.
+  const originalRead=store.read.bind(store);
+  let releaseCatalog, catalogStarted;
+  const started=new Promise(resolve=>{catalogStarted=resolve;});
+  const held=new Promise(resolve=>{releaseCatalog=resolve;});
+  store.read=async(event,...args)=>{if(event==='GetAllHomes'){catalogStarted();await held;}return originalRead(event,...args);};
+  const catalog=request(s,'GetAllHomes',{});
+  await started;
+  try {
+    const live=await Promise.all([
+      request(s,'PhoneWriteVariable',{homeName:'Shared',requestId:'unblocked-write'}),
+      request(s,'GetVariableSnapshot',{homeName:'Shared',requestId:'unblocked-snapshot'})
+    ]);
+    for(const response of live)assert.match(response.message,/offline/);
+  } finally {releaseCatalog();store.read=originalRead;}
+  await catalog;
   await accounts.share(owner.user,'Shared',{email:'member@example.test',permissions:{devices:true}});
   assert.equal((await request(s,'AddDevice',{homeName:'Shared',deviceName:'Lamp'})).status,'OK');
   await accounts.share(owner.user,'Shared',{email:'member@example.test',remove:true});

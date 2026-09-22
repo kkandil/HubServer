@@ -64,15 +64,29 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
     s.on('disconnect',safe(async()=>{if(hubs.get(name)!==hub)return; hubs.delete(name); await store.repo.seen(name); await statuses();}));
   });
   io.on('connection',s=>{
-    let requestQueue=Promise.resolve();
-    const enqueue=work=>{requestQueue=requestQueue.then(work).catch(e=>console.error('Gateway request:',e.message));};
+    let editQueue=Promise.resolve(), writeQueue=Promise.resolve(), authentication;
+    // Share only an in-flight check, never cache permissions or a revoked session.
+    const authenticate=()=>{
+      if(!authentication) authentication=accounts.authenticate(s.handshake.query.token).finally(()=>{authentication=null;});
+      return authentication;
+    };
+    const enqueue=(event,work)=>{
+      // Live control must not wait behind catalog/database reads. Only mutations
+      // in the same lane need FIFO ordering; snapshots carry their own revisions.
+      if(event==='PhoneWriteVariable') writeQueue=writeQueue.then(work).catch(e=>console.error('Gateway request:',e.message));
+      else if(edits.has(event)) editQueue=editQueue.then(work).catch(e=>console.error('Gateway request:',e.message));
+      else safe(work)();
+    };
     phones.set(s.id,s); s.emit('HubStatus',{online:true,gateway:true});
     safe(async()=>s.emit('HomeStatuses',await homesFor(s)))();
     for(const h of hubs.values()) if(h.ready) h.socket.emit('PhoneOpen',{id:s.id});
-    for(const event of requests) s.on(event,input=>enqueue(async()=>{
+    for(const event of requests) s.on(event,input=>{
+      const received=Date.now(), trace=['PhoneWriteVariable','GetVariableSnapshot'].includes(event);
+      if(trace)console.log(`Phone request received: event=${event} home=${input?.homeName} requestId=${input?.requestId}`);
+      enqueue(event,async()=>{
       try {
         if(accounts) {
-          try {await accounts.authenticate(s.handshake.query.token);}catch(e){s.emit('SessionExpired');s.disconnect(true);return;}
+          try {await authenticate();}catch(e){s.emit('SessionExpired');s.disconnect(true);return;}
           if(!['PhoneConnect','GetAllHomes','AddNewHome'].includes(event)) {
             const permission=event==='DeleteHome'?'home':['AddDevice','DeleteDevice','AddVariable','DeleteDeviceVariable'].includes(event)?'devices':['SaveEvent','DeleteEvent','SetEventEnabled'].includes(event)?'events':['SaveSchedule','DeleteSchedule'].includes(event)?'schedules':null;
             await accounts.require(s.user,input?.homeName,permission);
@@ -93,11 +107,14 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
         const h=hubs.get(input?.homeName);
         if(!h?.ready || !h.phones.has(s.id)) throw new Error('Home hub is offline; live commands are not queued');
         h.socket.emit('PhoneRequest',{id:s.id,event,payload:input});
+        if(trace)console.log(`Phone request forwarded: event=${event} home=${input?.homeName} requestId=${input?.requestId} gatewayMs=${Date.now()-received}`);
       } catch(e) {
+        if(trace)console.log(`Phone request rejected: event=${event} requestId=${input?.requestId} gatewayMs=${Date.now()-received} reason=${e.message}`);
         const structured=input?.requestId || ['AddDevice','DeleteDevice','DeleteDeviceVariable'].includes(event);
         s.emit(event,structured?{status:'Error',requestId:input?.requestId,message:e.message}:e.message);
       }
-    }));
+      });
+    });
     s.on('disconnect',()=>{phones.delete(s.id);for(const h of hubs.values()){h.phones.delete(s.id);h.socket.emit('PhoneClose',{id:s.id});}});
   });
   const timer=setInterval(()=>{for(const name of hubs.keys())safe(()=>sync(name))();},15000); timer.unref();

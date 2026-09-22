@@ -65,6 +65,20 @@ test('two independent hubs, offline edits synchronize before live traffic, recon
   assert.equal((await request(local,'GetAllDevices',{homeName:'Germany'})).devices[0].id,add.deviceID);
   assert.equal((await request(local,'GetEvents',{homeName:'Germany'})).events[0].conditions[0].operator,'>');
   assert.match(await request(local,'GetAllDevices',{homeName:'Egypt'}),/belongs to/);
+  const read=store.read.bind(store);
+  let release, entered;
+  const began=new Promise(resolve=>{entered=resolve;});
+  const hold=new Promise(resolve=>{release=resolve;});
+  store.read=async(event,...args)=>{if(event==='GetAllDevices'){entered();await hold;}return read(event,...args);};
+  const blocked=request(phone,'GetAllDevices',{homeName:'Germany'});
+  await began;
+  try {
+    const snapshot=await request(phone,'GetVariableSnapshot',{homeName:'Germany',requestId:'bypass-slow-read'});
+    assert.equal(snapshot.status,'OK');assert.equal(snapshot.values.length,2);
+    const command=await request(phone,'PhoneWriteVariable',{homeName:'Germany',deviceID:add.deviceID,varName:'output',varType:'int',varValue:'1',requestId:'bypass-command'});
+    assert.equal(command.message,'Device_Not_Connected'); // Pi handled it while catalog is still blocked.
+  } finally {release();store.read=read;}
+  await blocked;
   const offline=wait(phone,'HomeStatuses',x=>!x.homeStatuses.find(h=>h.homeName==='Germany').online);germany.b.close();await offline;
   const disconnected=await request(phone,'GetAllHomes');assert.equal(disconnected.homes.length,2);assert.equal(disconnected.homeStatuses.find(h=>h.homeName==='Egypt').online,true);
   assert.equal((await request(phone,'GetAllDevices',{homeName:'Germany'})).devices.length,1);
