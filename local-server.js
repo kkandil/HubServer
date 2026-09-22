@@ -18,6 +18,7 @@ var ScheduleList = new Map();
 
 const { SQLiteClient } = require('./sqlite-store');
 const client = new SQLiteClient(process.env.DATA_FILE || './data/smarthome.sqlite');
+const variableState = new (require('./variable-state').VariableState)(client.sql);
 const { Scheduler } = require('./scheduler');
 const automationHandlers = {
 	resolveTarget: async target => {
@@ -37,7 +38,6 @@ const automationHandlers = {
 			varName: target.varName, varType: target.varType, varValue: target.varValue };
 		connection.Socket.emit('PhoneWriteVariable', payload);
 		await UpdateVariableValue(target.homeName, device.Name, target.varName, target.varValue);
-		for (const phone of ConnectedPhonesList.values()) phone.Socket.emit('DeviceWriteVariable', payload);
 		return 'sent'; // Transport dispatch, not a hardware acknowledgement.
 	},
 	onChange: target => {
@@ -425,22 +425,10 @@ async function SearchForVariable(homeName, deviceName, varName) {
 
 async function UpdateVariableValue(homeName, deviceName, varName, varValue) {
 	try {
-		const homeExists = await HomeExists(homeName);
-		if (!homeExists) {
-			return -2;
-		}
-
-		const variablesCol = GetHomeDb(homeName).collection("Var_" + deviceName);
-		const filter = { VarName: varName };
-		const updateDocument = {
-			$set: {
-				Value: varValue,
-			},
-		};
-		await variablesCol.updateOne(filter, updateDocument);
-		const device = await GetDevicesCollection(homeName).findOne({ Name: deviceName });
-		if (device) events.changed({ homeName, deviceID: device.id, varName, varValue }).catch(error => console.error('Event evaluation:', error.message));
-		return 0;
+		const update=variableState.write(homeName,deviceName,varName,varValue);
+		for (const {Socket} of ConnectedPhonesList.values()) Socket.emit('DeviceWriteVariable',update);
+		events.changed(update).catch(error => console.error('Event evaluation:', error.message));
+		return update;
 	} catch (err) {
 		console.error(`UpdateVariableValue: ${err}`);
 		return -1;
@@ -620,6 +608,10 @@ io.on("connection", function (socket) {
 	}
 	scheduler.attach(socket);
 	events.attach(socket);
+	socket.on('GetVariableSnapshot', input => {
+		try {socket.emit('GetVariableSnapshot',{status:'OK',requestId:input?.requestId,...variableState.snapshot(input?.homeName)});}
+		catch(e){socket.emit('GetVariableSnapshot',{status:'Error',requestId:input?.requestId,message:e.message});}
+	});
 	console.log("client connected id = " + socket.id);
 	
 	
@@ -979,6 +971,7 @@ io.on("connection", function (socket) {
 	// Phone writes variable to device
 
 	socket.on('PhoneWriteVariable', async function (data) {
+		const reply=(message,update)=>socket.emit('PhoneWriteVariable',data?.requestId?{status:message==='OK'?'OK':'Error',message,requestId:data.requestId,...update}:message);
 		if (!data ||
 			data.hasOwnProperty('homeName') == false ||
 			data.hasOwnProperty('deviceID') == false ||
@@ -986,13 +979,13 @@ io.on("connection", function (socket) {
 			data.hasOwnProperty('varType') == false ||
 			data.hasOwnProperty('varValue') == false) {
 			LogMsg('PhoneWriteVariable: Error, Empty_Parameter');
-			socket.emit('PhoneWriteVariable', "Empty_Parameter");
+			reply("Empty_Parameter");
 			return;
 		}
 
 		const homeExists = await HomeExists(data['homeName']);
 		if (!homeExists) {
-			socket.emit('PhoneWriteVariable', "Home_Not_Found");
+			reply("Home_Not_Found");
 			return;
 		}
 
@@ -1012,22 +1005,14 @@ io.on("connection", function (socket) {
 						varValue: data['varValue']
 					});
 
-					socket.emit('PhoneWriteVariable', "OK");
+					
 				}
 				else {
-					socket.emit('PhoneWriteVariable', "Device_Not_Connected");
+					reply("Device_Not_Connected"); return;
 				}
 
-				await UpdateVariableValue(data['homeName'], DeviceName, data['varName'], data['varValue']);
-
-				// A device is not required to echo a phone command. Publish the saved
-				// value to all phones; the gateway checks each recipient's home access.
-				for (const { Socket } of ConnectedPhonesList.values()) {
-					Socket.emit('DeviceWriteVariable', {
-						homeName: data['homeName'], deviceID: Id,
-						varName: data['varName'], varType: data['varType'], varValue: data['varValue']
-					});
-				}
+				const update=await UpdateVariableValue(data['homeName'], DeviceName, data['varName'], data['varValue']);
+				reply(typeof update==='object'?'OK':'Server_Error',typeof update==='object'?update:undefined);
 
 				LogMsg("PhoneWriteVariable: homeName=" + data['homeName'] +
 					", devId=" + data['deviceID'] +
@@ -1036,12 +1021,12 @@ io.on("connection", function (socket) {
 					", varValue=" + data['varValue']);
 			}
 			else {
-				socket.emit('PhoneWriteVariable', "Var_Not_Found");
+				reply("Var_Not_Found");
 				LogMsg('PhoneWriteVariable: Error, Var_Not_Found');
 			}
 		}
 		else {
-			socket.emit('PhoneWriteVariable', "Device_Not_Found");
+			reply("Device_Not_Found");
 			LogMsg('PhoneWriteVariable: Error, Device_Not_Found');
 		}
 	});
@@ -1073,15 +1058,6 @@ io.on("connection", function (socket) {
 			const [varResult, value] = await SearchForVariable(data['homeName'], DeviceName, data['varName']);
 
 			if (varResult == 1) {
-				for (let [phoneId, { Socket }] of ConnectedPhonesList.entries()) {
-					Socket.emit('DeviceWriteVariable', {
-						homeName: data['homeName'],
-						deviceID: data['deviceID'],
-						varName: data['varName'],
-						varType: data['varType'],
-						varValue: data['varValue']
-					});
-				}
 
 				await UpdateVariableValue(data['homeName'], DeviceName, data['varName'], data['varValue']);
 

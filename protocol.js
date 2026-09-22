@@ -4,7 +4,7 @@
 const requests = [
   'PhoneConnect', 'AddNewHome', 'GetAllHomes', 'DeleteHome', 'AddDevice',
   'DeleteDevice', 'AddVariable', 'DeleteDeviceVariable', 'PhoneWriteVariable',
-  'RequestVariableValue', 'GetVariableValueFromServer', 'GetDeviceStatus',
+  'RequestVariableValue', 'GetVariableValueFromServer', 'GetVariableSnapshot', 'GetDeviceStatus',
   'GetAllDevices', 'GetDeviceVariables', 'GetSchedules', 'SaveSchedule', 'DeleteSchedule',
   'GetEvents', 'SaveEvent', 'DeleteEvent', 'SetEventEnabled', 'GetEventVariables'
 ];

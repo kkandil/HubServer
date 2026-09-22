@@ -116,6 +116,18 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
     await Promise.all(notifications);
   }
   assert.equal((await request(remote2, 'GetVariableValueFromServer', target)).Value, '19');
+  const before = await request(remote, 'GetVariableSnapshot', {homeName:'TestHome',requestId:'snapshot-before'});
+  assert.equal(before.status,'OK');assert.equal(before.requestId,'snapshot-before');
+  assert.equal(before.values.find(v=>v.varName==='power').varValue,'19');
+  const broadcast = waitEvent(remote2,'DeviceWriteVariable',v=>v.varValue==='20');
+  const snapshotReply = request(remote,'GetVariableSnapshot',{homeName:'TestHome',requestId:'concurrent-snapshot'});
+  const writeReply = request(remote,'PhoneWriteVariable',{...target,varType:'int',varValue:'20',requestId:'write-20'});
+  const [snapshot,ack,pushed] = await Promise.all([snapshotReply,writeReply,broadcast]);
+  assert.equal(ack.status,'OK');assert.equal(ack.requestId,'write-20');assert.equal(ack.varValue,'20');
+  assert.equal(ack.revision,pushed.revision);assert.ok(ack.revision>before.revision);
+  const after = await request(remote,'GetVariableSnapshot',{homeName:'TestHome',requestId:'snapshot-after'});
+  assert.equal(after.values.find(v=>v.varName==='power').varValue,'20');assert.equal(after.revision,ack.revision);
+  assert.ok(snapshot.revision<=after.revision);
   const actionTarget = { ...target, varName: 'eventOutput' };
   assert.equal(await request(remote, 'AddVariable', { ...actionTarget, varType: 'int', varValue: '0', Scheduled: false,
     OnTime: 0, OffTime: 0, OnValue: 1, OffValue: 0 }), 'OK');

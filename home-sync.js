@@ -31,7 +31,7 @@ class HomeSync {
           for(const v of variables) if(!device.variables.some(n=>n.VarName===v.VarName)) this.scheduler.removeTarget(this.homeName,device.id,v.VarName);
           for(const v of device.variables) {
             const old=variables.find(o=>o.VarName===v.VarName && o.Type===v.Type);
-            sql.prepare('INSERT INTO documents(db,collection,body) VALUES(?,?,?)').run(this.homeName,col,JSON.stringify({...v,Value:old?old.Value:v.Value}));
+            sql.prepare('INSERT INTO documents(db,collection,body) VALUES(?,?,?)').run(this.homeName,col,JSON.stringify({...v,Value:old?old.Value:v.Value,ValueRevision:old?.ValueRevision||0}));
           }
         }
         const oldRules=this.events.rows(this.homeName);

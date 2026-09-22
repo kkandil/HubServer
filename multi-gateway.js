@@ -64,10 +64,12 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
     s.on('disconnect',safe(async()=>{if(hubs.get(name)!==hub)return; hubs.delete(name); await store.repo.seen(name); await statuses();}));
   });
   io.on('connection',s=>{
+    let requestQueue=Promise.resolve();
+    const enqueue=work=>{requestQueue=requestQueue.then(work).catch(e=>console.error('Gateway request:',e.message));};
     phones.set(s.id,s); s.emit('HubStatus',{online:true,gateway:true});
     safe(async()=>s.emit('HomeStatuses',await homesFor(s)))();
     for(const h of hubs.values()) if(h.ready) h.socket.emit('PhoneOpen',{id:s.id});
-    for(const event of requests) s.on(event,safe(async input=>{
+    for(const event of requests) s.on(event,input=>enqueue(async()=>{
       try {
         if(accounts) {
           try {await accounts.authenticate(s.handshake.query.token);}catch(e){s.emit('SessionExpired');s.disconnect(true);return;}
