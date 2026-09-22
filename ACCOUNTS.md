@@ -1,0 +1,21 @@
+# Accounts and home sharing
+
+Enable `ACCOUNTS_ENABLED=true` on the gateway and each managed Pi. The gateway uses `SmartHomeHubConfig` collections `users`, `sessions`, `home_access`, `home_layouts`, and `auth_limits`. Existing `homes` and `meta` remain unchanged. Passwords use salted scrypt (N=32768); only session-token SHA-256 digests are stored on the server. Tokens have a sliding 90-day lifetime. Mongo TTL indexes remove expired sessions and authentication rate-limit buckets. HTTPS is required by the Android account client.
+
+## First use / migration
+
+Update the existing Android installation using Android Studio Run; do not uninstall or clear its data. Choose Create account, email `khaledmagdy50@gmail.com`, and enter a new password of at least 8 characters. This reserved owner email requires the old server access key already saved on that phone. It claims the existing Home_Germany and Home_Egypt homes, and the app copies the phone's existing layouts into the account cache once, then uploads layouts only where the server has none. Passwords are never saved on the phone; the session token is encrypted using Android Keystore. Credentials are excluded from backups and device transfer.
+
+Other users register normally. In Me, the owner chooses a home and shares it with an existing email address. All members can view and control devices. Independent permissions allow editing home settings (including deletion), devices/variables, events, schedules, and widget layouts. Only the owner can grant, change, or revoke membership. Permissions are checked on each gateway request and before forwarding home-specific responses; knowing a home name is insufficient. Legacy app access keys no longer grant gateway access in account mode. ESP device connections remain LAN based; account authorization does not replace firmware authentication or make untrusted LAN devices safe.
+
+## Shared layouts and offline behavior
+
+Widget layouts are cloud configuration keyed by home, separate from live values. Layout writes use optimistic revisions; stale edits are rejected and refreshed rather than overwriting another phone. The gateway notifies signed-in clients on updates; the app also refreshes every 10 seconds while running. Local preference changes are debounced and live value changes are excluded from uploaded layouts. Pending layout edits survive a network outage; conflicts are shown and the server layout wins. All account caches and selected-home preferences are namespaced by immutable user ID. Sign-out clears the active session and disconnects the socket; online sign-out also revokes the server session. Offline sign-out forgets the local credential immediately; the unreachable server session expires naturally.
+
+Homes/devices/events retain the existing persistent snapshots. Schedules remain executed and stored on each Pi, with runtime snapshots mirrored to the gateway for offline viewing. Schedule edits require the Pi online. Me → View home schedules provides access independently of layout editing permission. Existing schedules/events continue running locally when Internet is unavailable. Phone control requires a reachable gateway and ready home hub. In account mode the Pi rejects direct phone requests without the gateway's private token, preventing a phone from bypassing permissions through a LAN address. The bridge supplies that token; ESP protocol operations remain unchanged.
+
+There is no email/password-recovery flow in this version. Email addresses are stored case-insensitively and uniquely indexed. Nicknames are editable display names (1–40 characters) and may repeat. Email verification and email delivery are not configured. Home names retain the existing system-wide uniqueness requirement. New home hubs still need an administrator to provision their individual hub binding and token.
+
+## Validation
+
+`node --test test/*.test.js` includes account hashing/login, reserved owner protection, session persistence/revocation, per-home and per-feature authorization, layout revision conflicts, legacy credential rejection, and permission revocation on an already connected legacy Android socket. Existing automation and multi-home tests remain applicable. Build Android with the existing Gradle wrapper and JDK 17.

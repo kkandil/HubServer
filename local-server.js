@@ -608,6 +608,10 @@ io.on("connection", function (socket) {
 		const on=socket.on.bind(socket), edits=require('./config-store').edits;
 		socket.on=(event,listener)=>on(event,(...args)=>{
 			const input=args[0];
+			if(process.env.ACCOUNTS_ENABLED==='true' && require('./protocol').requests.includes(event)
+				&& socket.handshake.query.gatewayToken!==process.env.HUB_TOKEN) {
+				return socket.emit(event,{status:'Error',requestId:input?.requestId,message:'Sign in through the home gateway'});
+			}
 			if(event==='GetAllHomes') return socket.emit(event,{homes:[process.env.HUB_HOME],homeStatuses:[{homeName:process.env.HUB_HOME,online:true}]});
 			const message=input?.homeName && input.homeName!==process.env.HUB_HOME?'This hub belongs to '+process.env.HUB_HOME:edits.has(event)?'Use the Heroku gateway to edit home configuration; local device control remains available':null;
 			if(message) return socket.emit(event,input?.requestId || ['AddDevice','DeleteDevice','DeleteDeviceVariable'].includes(event)?{status:'Error',requestId:input?.requestId,message}:message);

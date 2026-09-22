@@ -40,7 +40,7 @@ function startBridge({ gatewayUrl, hubToken, localUrl, homeName }) {
   hub.on('PhoneOpen', data => {
     if (!data || typeof data.id !== 'string') return;
     closePhone(data.id);
-    const phone = connect(localUrl, { forceNew: true, transports: ['websocket'] });
+    const phone = connect(localUrl, { forceNew: true, transports: ['websocket'], query: { gatewayToken: hubToken } });
     sessions.set(data.id, phone);
     phone.on('connect', () => phone.emit('PhoneConnect', { phoneID: 'gateway:' + data.id }));
     phone.on('PhoneConnect', result => {
@@ -48,7 +48,7 @@ function startBridge({ gatewayUrl, hubToken, localUrl, homeName }) {
     });
     for (const event of responses) phone.on(event, payload => {
       if (hub.connected) hub.emit('PhoneResponse', { id: data.id, event, payload });
-      if(homeName && ['EventsChanged','DeviceStatus','DeviceWriteVariable'].includes(event)) setTimeout(runtime,100);
+      if(homeName && ['EventsChanged','SchedulesChanged','DeviceStatus','DeviceWriteVariable'].includes(event)) setTimeout(runtime,100);
     });
     phone.on('disconnect', () => {
       if (hub.connected && sessions.get(data.id) === phone) hub.emit('PhoneUnavailable', { id: data.id });

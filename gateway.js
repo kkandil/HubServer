@@ -88,7 +88,10 @@ if (require.main === module) {
     if(process.env.CONFIG_MONGO_URI) {
       const {MongoClient}=require('mongodb'); const {ConfigStore,MongoHomes}=require('./config-store');
       const mongo=new MongoClient(process.env.CONFIG_MONGO_URI); await mongo.connect();
-      gateway=require('./multi-gateway').createMultiGateway({store:new ConfigStore(new MongoHomes(mongo.db('SmartHomeHubConfig'))),appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}')});
+      const db=mongo.db('SmartHomeHubConfig');
+      const accounts=process.env.ACCOUNTS_ENABLED==='true'?new (require('./accounts').Accounts)(db,{legacyToken:process.env.APP_TOKEN,ownerEmail:'khaledmagdy50@gmail.com'}):null;
+      if(accounts)await accounts.init();
+      gateway=require('./multi-gateway').createMultiGateway({store:new ConfigStore(new MongoHomes(db)),appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}'),accounts});
     } else gateway=createGateway({ hubToken: process.env.HUB_TOKEN, appToken: process.env.APP_TOKEN });
     gateway.server.listen(Number(process.env.PORT || 3000), () => console.log('SmartHome gateway listening'));
   })().catch(e=>{console.error('Gateway startup failed:',e.message);process.exit(1);});

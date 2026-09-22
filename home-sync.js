@@ -52,7 +52,8 @@ class HomeSync {
   }
   async runtime() {
     const devices=await this.client.db(this.homeName).collection('Devices').find().toArray();
-    return {homeName:this.homeName,devices,events:this.events.list?this.events.list({homeName:this.homeName}).map(r=>({id:r.id,lastRun:r.lastRun})):[]};
+    const schedules=this.client.sql.prepare('SELECT body,last_run FROM schedules WHERE home=?').all(this.homeName).map(r=>({...JSON.parse(r.body),lastRun:r.last_run?JSON.parse(r.last_run):null}));
+    return {homeName:this.homeName,devices,schedules,events:this.events.list?this.events.list({homeName:this.homeName}).map(r=>({id:r.id,lastRun:r.lastRun})):[]};
   }
   attach(socket) {
     const allowed=()=>socket.handshake.query.syncToken===this.token;
