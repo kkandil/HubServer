@@ -105,6 +105,17 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   await waitEvent(remote2, 'HubStatus', x => x.online);
   const [a, b] = await Promise.all([request(remote, 'GetAllDevices', target), request(remote2, 'GetDeviceVariables', target)]);
   assert.equal(a.devices[0].id, id); assert.equal(b.variables[0].VarName, 'power');
+  // A firmware command need not echo back. Phone-originated writes must still
+  // reach every other phone, in both directions and for rapid consecutive writes.
+  for (let i = 10; i < 20; i++) {
+    const writer = i % 2 ? remote2 : remote;
+    const value = String(i);
+    const notifications = [remote, remote2].map(phone => waitEvent(phone, 'DeviceWriteVariable', x =>
+      x.homeName === target.homeName && x.deviceID === id && x.varName === 'power' && x.varValue === value));
+    assert.equal(await request(writer, 'PhoneWriteVariable', { ...target, varType: 'int', varValue: value }), 'OK');
+    await Promise.all(notifications);
+  }
+  assert.equal((await request(remote2, 'GetVariableValueFromServer', target)).Value, '19');
   const actionTarget = { ...target, varName: 'eventOutput' };
   assert.equal(await request(remote, 'AddVariable', { ...actionTarget, varType: 'int', varValue: '0', Scheduled: false,
     OnTime: 0, OffTime: 0, OnValue: 1, OffValue: 0 }), 'OK');

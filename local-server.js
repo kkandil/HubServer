@@ -1020,6 +1020,15 @@ io.on("connection", function (socket) {
 
 				await UpdateVariableValue(data['homeName'], DeviceName, data['varName'], data['varValue']);
 
+				// A device is not required to echo a phone command. Publish the saved
+				// value to all phones; the gateway checks each recipient's home access.
+				for (const { Socket } of ConnectedPhonesList.values()) {
+					Socket.emit('DeviceWriteVariable', {
+						homeName: data['homeName'], deviceID: Id,
+						varName: data['varName'], varType: data['varType'], varValue: data['varValue']
+					});
+				}
+
 				LogMsg("PhoneWriteVariable: homeName=" + data['homeName'] +
 					", devId=" + data['deviceID'] +
 					", varName=" + data['varName'] +
