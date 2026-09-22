@@ -54,7 +54,13 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
     s.on('LocalUnavailable',safe(async()=>{if(hubs.get(name)===hub){hub.ready=false;hub.phones.clear();await statuses();}}));
     s.on('PhoneReady',data=>{if(hubs.get(name)===hub) hub.phones.add(data.id);});
     s.on('PhoneUnavailable',data=>hub.phones.delete(data.id));
-    s.on('HomeRuntime',safe(async data=>{if(hubs.get(name)!==hub || data.homeName!==name) return; await store.repo.runtime(name,data); await statuses();await broadcast('EventsChanged',{homeName:name});}));
+    s.on('HomeRuntime',safe(async data=>{
+      if(hubs.get(name)!==hub || data.homeName!==name) return;
+      const eventState=JSON.stringify(data.events||[]), changed=hub.eventState!==eventState;
+      hub.eventState=eventState;
+      await store.repo.runtime(name,data); await statuses();
+      if(changed)await broadcast('EventsChanged',{homeName:name});
+    }));
     s.on('PhoneResponse',safe(async data=>{
       if(hubs.get(name)!==hub || !data || !responses.includes(data.event)) return;
       if(data.payload?.homeName && data.payload.homeName!==name) return;
