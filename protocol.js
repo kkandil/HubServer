@@ -8,5 +8,5 @@ const requests = [
   'GetAllDevices', 'GetDeviceVariables', 'GetSchedules', 'SaveSchedule', 'DeleteSchedule',
   'GetEvents', 'SaveEvent', 'DeleteEvent', 'SetEventEnabled', 'GetEventVariables'
 ];
-const responses = [...requests, 'DeviceStatus', 'DeviceDeleted', 'DeviceWriteVariable', 'SchedulesChanged', 'EventsChanged'];
+const responses = [...requests, 'DeviceWriteNotification', 'DeviceStatus', 'DeviceDeleted', 'DeviceWriteVariable', 'SchedulesChanged', 'EventsChanged'];
 module.exports = { requests, responses };

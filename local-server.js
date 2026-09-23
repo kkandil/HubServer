@@ -1041,6 +1041,28 @@ io.on("connection", function (socket) {
 	////////////////////////////////////////////////////////////////////////////////////////
 	// Device writes variable to phones
 
+    socket.on('DeviceWriteNotification', data => {
+        if (!data || typeof data.message !== 'string' || !data.message.trim() ||
+            Buffer.byteLength(data.message, 'utf8') > 512) {
+            socket.emit('DeviceWriteNotification', 'Invalid_Message'); return;
+        }
+        const device = ConnectedDevicesList.get(MakeConnectedDeviceKey(data.homeName, data.deviceID));
+        if (!device || device.Socket !== socket) {
+            socket.emit('DeviceWriteNotification', 'Device_Not_Connected'); return;
+        }
+        const now = Date.now();
+        if (device.lastNotificationAt && now - device.lastNotificationAt < 1000) {
+            socket.emit('DeviceWriteNotification', 'Rate_Limited'); return;
+        }
+        device.lastNotificationAt = now;
+        const notification = { homeName: device.HomeName, deviceID: device.DeviceId,
+            deviceName: device.Name, message: data.message, timestamp: now,
+            notificationId: require('crypto').randomUUID() };
+        for (const {Socket} of ConnectedPhonesList.values()) Socket.emit('DeviceWriteNotification', notification);
+        socket.emit('DeviceWriteNotification', 'OK');
+        LogMsg('DeviceWriteNotification: home=' + device.HomeName + ' device=' + device.DeviceId);
+    });
+
 	socket.on('DeviceWriteVariable', async function (data) {
 		if (!data ||
 			data.hasOwnProperty('homeName') == false ||

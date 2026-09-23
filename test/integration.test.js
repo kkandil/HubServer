@@ -105,6 +105,17 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   await waitEvent(remote2, 'HubStatus', x => x.online);
   const [a, b] = await Promise.all([request(remote, 'GetAllDevices', target), request(remote2, 'GetDeviceVariables', target)]);
   assert.equal(a.devices[0].id, id); assert.equal(b.variables[0].VarName, 'power');
+  const messages = [remote, remote2].map(phone => waitEvent(phone, 'DeviceWriteNotification'));
+  assert.equal(await request(device, 'DeviceWriteNotification', {...target, message:'Water tank is empty'}), 'OK');
+  for(const message of await Promise.all(messages)) {
+    assert.equal(message.message, 'Water tank is empty');
+    assert.equal(message.deviceName, 'Lamp');
+    assert.equal(message.homeName, 'TestHome');
+  }
+  assert.equal(await request(device, 'DeviceWriteNotification', {...target, message:'Too soon'}), 'Rate_Limited');
+  assert.equal(await request(device, 'DeviceWriteNotification', {...target, message:'x'.repeat(513)}), 'Invalid_Message');
+  const impostor = socket(localUrl); sockets.push(impostor); await waitEvent(impostor, 'connect');
+  assert.equal(await request(impostor, 'DeviceWriteNotification', {...target, message:'Forged'}), 'Device_Not_Connected');
   // A firmware command need not echo back. Phone-originated writes must still
   // reach every other phone, in both directions and for rapid consecutive writes.
   for (let i = 10; i < 20; i++) {
