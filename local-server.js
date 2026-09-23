@@ -1042,27 +1042,27 @@ io.on("connection", function (socket) {
 	////////////////////////////////////////////////////////////////////////////////////////
 	// Device writes variable to phones
 
-    socket.on('DeviceWriteNotification', data => {
+    for (const [event,kind] of [['DeviceWriteNotification','notification'],['DeviceWriteAlarm','alarm']]) socket.on(event, data => {
         if (!data || typeof data.message !== 'string' || !data.message.trim() ||
             Buffer.byteLength(data.message, 'utf8') > 512) {
-            socket.emit('DeviceWriteNotification', 'Invalid_Message'); return;
+            socket.emit(event, 'Invalid_Message'); return;
         }
         const device = ConnectedDevicesList.get(MakeConnectedDeviceKey(data.homeName, data.deviceID));
         if (!device || device.Socket !== socket) {
-            socket.emit('DeviceWriteNotification', 'Device_Not_Connected'); return;
+            socket.emit(event, 'Device_Not_Connected'); return;
         }
         const now = Date.now();
-        if (device.lastNotificationAt && now - device.lastNotificationAt < 1000) {
-            socket.emit('DeviceWriteNotification', 'Rate_Limited'); return;
+        if (device[kind+'LastAlertAt'] && now - device[kind+'LastAlertAt'] < 1000) {
+            socket.emit(event, 'Rate_Limited'); return;
         }
-        device.lastNotificationAt = now;
+        device[kind+'LastAlertAt'] = now;
         const notification = { homeName: device.HomeName, deviceID: device.DeviceId,
-            deviceName: device.Name, message: data.message, timestamp: now,
+            deviceName: device.Name, message: data.message, timestamp: now, kind,
             notificationId: require('crypto').randomUUID() };
         for (const {Socket} of ConnectedPhonesList.values()) Socket.emit('DeviceWriteNotification', notification);
         io.to('notification-bridge').emit('HubNotification', notification);
-        socket.emit('DeviceWriteNotification', 'OK');
-        LogMsg('DeviceWriteNotification: home=' + device.HomeName + ' device=' + device.DeviceId);
+        socket.emit(event, 'OK');
+        LogMsg(event + ': home=' + device.HomeName + ' device=' + device.DeviceId);
     });
 
 	socket.on('DeviceWriteVariable', async function (data) {

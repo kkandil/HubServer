@@ -116,6 +116,12 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   assert.equal(await request(device, 'DeviceWriteNotification', {...target, message:'x'.repeat(513)}), 'Invalid_Message');
   const impostor = socket(localUrl); sockets.push(impostor); await waitEvent(impostor, 'connect');
   assert.equal(await request(impostor, 'DeviceWriteNotification', {...target, message:'Forged'}), 'Device_Not_Connected');
+  const alarms=[remote,remote2].map(phone=>waitEvent(phone,'DeviceWriteNotification',data=>data.kind==='alarm'));
+  assert.equal(await request(device,'DeviceWriteAlarm',{...target,message:'Smoke detected'}),'OK');
+  for(const alarm of await Promise.all(alarms)) {assert.equal(alarm.kind,'alarm');assert.equal(alarm.message,'Smoke detected');}
+  assert.equal(await request(impostor,'DeviceWriteAlarm',{...target,message:'Forged alarm'}),'Device_Not_Connected');
+  assert.equal(await request(device,'DeviceWriteAlarm',{...target,message:'Repeated alarm'}),'Rate_Limited');
+
   // A firmware command need not echo back. Phone-originated writes must still
   // reach every other phone, in both directions and for rapid consecutive writes.
   for (let i = 10; i < 20; i++) {

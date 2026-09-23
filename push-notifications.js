@@ -31,6 +31,8 @@ class PushNotifications {
     if(!payload || payload.homeName!==home || typeof payload.message!=='string' || !payload.message.trim() ||
        Buffer.byteLength(payload.message)>512 || typeof payload.notificationId!=='string' ||
        !/^[0-9a-f-]{36}$/.test(payload.notificationId) || !Number.isSafeInteger(payload.deviceID)) return;
+    if(payload.kind!==undefined && !['notification','alarm'].includes(payload.kind))return;
+    const kind=payload.kind||'notification';
     const doc=await this.store.repo.get(home);
     const device=!doc?.deleted && doc?.devices.find(d=>d.id===payload.deviceID);
     if(!device) return;
@@ -44,8 +46,8 @@ class PushNotifications {
       if(!session) {await this.tokens.deleteOne({_id:target._id,sessionId:target.sessionId});continue;}
       if(!await this.accounts.permissions({id:target.userId},home))continue;
       try {
-        await this.messaging.send({token:target.token,android:{priority:'high',ttl:300000},data:{
-          homeName:home,deviceID:String(device.id),deviceName:device.Name,message:payload.message,
+        await this.messaging.send({token:target.token,android:{priority:'high',ttl:kind==='alarm'?60000:300000},data:{
+          kind,homeName:home,deviceID:String(device.id),deviceName:device.Name,message:payload.message,
           notificationId:payload.notificationId,recipient:target.userId,sessionId:target.sessionId,
           timestamp:String(payload.timestamp||Date.now())
         }});

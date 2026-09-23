@@ -53,3 +53,11 @@ test('invalid FCM registrations are removed without exposing tokens in logs',asy
   f.manager.messaging.send=async()=>{throw Object.assign(new Error('private token'),{code:'messaging/registration-token-not-registered'});};
   await f.manager.deliver('Home',f.payload());assert.equal(f.manager.tokens.rows.length,0);
 });
+
+test('alarm type survives FCM routing and expires sooner than normal notifications',async()=>{
+  const f=fixture();await f.register('a','token_a'.repeat(10));
+  await f.manager.deliver('Home',{...f.payload(),kind:'alarm'});
+  assert.equal(f.sent[0].data.kind,'alarm');assert.equal(f.sent[0].android.ttl,60000);
+  await f.manager.deliver('Home',{...f.payload(),kind:'unknown'});assert.equal(f.sent.length,1);
+  await f.manager.deliver('Home',f.payload());assert.equal(f.sent[1].data.kind,'notification');assert.equal(f.sent[1].android.ttl,300000);
+});
