@@ -91,7 +91,11 @@ if (require.main === module) {
       const db=mongo.db('SmartHomeHubConfig');
       const accounts=process.env.ACCOUNTS_ENABLED==='true'?new (require('./accounts').Accounts)(db,{legacyToken:process.env.APP_TOKEN,ownerEmail:'khaledmagdy50@gmail.com'}):null;
       if(accounts)await accounts.init();
-      gateway=require('./multi-gateway').createMultiGateway({store:new ConfigStore(new MongoHomes(db)),appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}'),accounts});
+      const store=new ConfigStore(new MongoHomes(db));
+      const {PushNotifications,firebaseMessaging}=require('./push-notifications');
+      const push=accounts?new PushNotifications({db,accounts,store,messaging:firebaseMessaging()}):null;
+      if(push)await push.init();
+      gateway=require('./multi-gateway').createMultiGateway({store,push,appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}'),accounts});
     } else gateway=createGateway({ hubToken: process.env.HUB_TOKEN, appToken: process.env.APP_TOKEN });
     gateway.server.listen(Number(process.env.PORT || 3000), () => console.log('SmartHome gateway listening'));
   })().catch(e=>{console.error('Gateway startup failed:',e.message);process.exit(1);});

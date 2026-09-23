@@ -3,7 +3,7 @@ const {timingSafeEqual}=require('node:crypto');
 const {requests,responses}=require('./protocol');
 const {edits,reads}=require('./config-store');
 const same=(a,b)=>typeof a==='string' && typeof b==='string' && Buffer.byteLength(a)===Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a),Buffer.from(b));
-function createMultiGateway({store,appToken,bindings,accounts}) {
+function createMultiGateway({store,appToken,bindings,accounts,push}) {
   const app=require('express')(), server=require('node:http').createServer(app);
   const io=require('socket.io')(server,{allowEIO3:true,pingTimeout:30000,maxHttpBufferSize:1000000});
   const hubs=new Map(), phones=new Map();
@@ -28,7 +28,7 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
         s.emit('AccountChanged');
       }
       await statuses();
-    });
+    },push);
   }
   async function sync(name) { const h=hubs.get(name); if(h) { const doc=await store.repo.get(name); if(doc && (!h.ready || doc.revision>(doc.appliedRevision||0))) h.socket.emit('HomeConfig',doc); } }
   app.get('/health',(_q,r)=>r.json({service:'Multi-home gateway',hubOnline:[...hubs.keys()].some(online)})); app.get('/',(_q,r)=>r.json({service:'SmartHome multi-home gateway'}));
@@ -60,6 +60,10 @@ function createMultiGateway({store,appToken,bindings,accounts}) {
       hub.eventState=eventState;
       await store.repo.runtime(name,data); await statuses();
       if(changed)await broadcast('EventsChanged',{homeName:name});
+    }));
+    s.on('HubNotification',safe(async data=>{
+      if(hubs.get(name)!==hub || data?.homeName!==name)return;
+      if(push)await push.deliver(name,data);
     }));
     s.on('PhoneResponse',safe(async data=>{
       if(hubs.get(name)!==hub || !data || !responses.includes(data.event)) return;

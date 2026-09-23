@@ -118,13 +118,17 @@ class Accounts {
     return doc;
   }
 }
-function attachAccountRoutes(app,accounts,store,notify) {
+function attachAccountRoutes(app,accounts,store,notify,push) {
   app.use('/api',require('express').json({limit:'600kb'}));
   app.use('/api',(_q,r,next)=>{r.set('Cache-Control','no-store');next();});
   const route=fn=>async(q,r)=>{try{r.json({status:'OK',...await fn(q)});}catch(e){r.status(e.message==='Sign in required'?401:400).json({status:'Error',message:e.message});}};
   for(const method of ['register','login']) app.post('/api/'+method,route(async q=>{await accounts.limit(q.ip);return accounts[method](q.body,store.repo);}));
   app.use('/api',async(q,r,next)=>{try{q.token=(q.headers.authorization||'').replace(/^Bearer /,'');q.user=await accounts.authenticate(q.token);next();}catch(e){r.status(401).json({status:'Error',message:'Sign in required'});}});
   app.post('/api/logout',route(async q=>{await accounts.logout(q.token);await notify(null,q.user.id);return {};}));
+  if(push) {
+    app.post('/api/push/register',route(q=>push.register(q.user,q.token,q.body)));
+    app.post('/api/push/unregister',route(async q=>{await push.unregister(q.user,q.token);return {};}));
+  }
   app.get('/api/me',route(async q=>({user:q.user})));
   app.post('/api/profile',route(async q=>({user:await accounts.profile(q.user,q.body)})));
   app.get('/api/homes',route(async q=>{

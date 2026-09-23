@@ -24,6 +24,9 @@ function startBridge({ gatewayUrl, hubToken, localUrl, homeName }) {
   if(syncSocket) {
     syncSocket.on('connect',()=>{if(pendingConfig)applyConfig(pendingConfig);});
     syncSocket.on('disconnect',()=>hub.emit('LocalUnavailable'));
+    syncSocket.on('HubNotification',data=>{
+      if(hub.connected && data?.homeName===homeName)hub.emit('HubNotification',data);
+    });
   }
   const runtime=()=>{if(syncSocket?.connected && hub.connected)syncSocket.timeout(10000).emit('ReadHomeRuntime',{},(err,result)=>{if(!err)hub.emit('HomeRuntime',result);});};
   const runtimeTimer=homeName?setInterval(runtime,10000):null;

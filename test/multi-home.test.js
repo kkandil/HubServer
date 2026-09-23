@@ -41,7 +41,9 @@ test('persistent desired config, idempotency, conflicts, comparator validation, 
 });
 test('two independent hubs, offline edits synchronize before live traffic, reconnect never resurrects deleted config', {timeout:65000},async t=>{
   const repo=new MemoryHomes(),store=new ConfigStore(repo),dir=mkdtempSync(path.join(tmpdir(),'multi-home-'));
-  const gateway=createMultiGateway({store,appToken:'app',bindings:{Germany:'germany',Egypt:'egypt'}});
+  let pushReceived;
+  const pushArrived=new Promise(resolve=>{pushReceived=resolve;});
+  const gateway=createMultiGateway({store,appToken:'app',bindings:{Germany:'germany',Egypt:'egypt'},push:{async deliver(home,data){pushReceived({home,data});}}});
   await new Promise(r=>gateway.server.listen(0,'127.0.0.1',r));const url='http://127.0.0.1:'+gateway.server.address().port;
   const sockets=[],children=[],bridges=[];
   t.after(async()=>{sockets.forEach(s=>s.disconnect());bridges.forEach(b=>b.close());for(const c of children)if(c.exitCode===null){const closed=new Promise(r=>c.once('exit',r));c.kill();await closed;}await gateway.close();rmSync(dir,{recursive:true,force:true});});
@@ -87,4 +89,15 @@ test('two independent hubs, offline edits synchronize before live traffic, recon
   const ready=wait(phone,'HomeStatuses',x=>x.homeStatuses.some(h=>h.homeName==='Germany'&&h.online&&!h.pending));
   const b=startBridge({gatewayUrl:url,hubToken:'germany',localUrl:'http://127.0.0.1:'+germany.port,homeName:'Germany'});bridges.push(b);await ready;
   assert.equal((await request(local,'GetAllDevices',{homeName:'Germany'})).devices.length,0);
+  const fresh=await request(phone,'AddDevice',{homeName:'Germany',deviceName:'Push_sensor'});
+  assert.equal(fresh.status,'OK');
+  const synced=wait(phone,'HomeStatuses',x=>x.homeStatuses.some(h=>h.homeName==='Germany'&&h.online&&!h.pending));
+  await synced;
+  const device=require('legacy-socket-client')('http://127.0.0.1:'+germany.port,{transports:['websocket'],forceNew:true});sockets.push(device);await wait(device,'connect');
+  assert.equal(await request(device,'DeviceConnect',{homeName:'Germany',deviceID:fresh.deviceID}),'OK');
+  await new Promise(resolve=>setTimeout(resolve,30)); // registration follows its legacy acknowledgement
+  phone.disconnect();
+  assert.equal(await request(device,'DeviceWriteNotification',{homeName:'Germany',deviceID:fresh.deviceID,message:'No phone socket needed'}),'OK');
+  const delivered=await pushArrived;assert.equal(delivered.home,'Germany');assert.equal(delivered.data.message,'No phone socket needed');
+
 });

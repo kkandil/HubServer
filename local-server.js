@@ -593,6 +593,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 io.on("connection", function (socket) {
 	if(homeSync) {
 		homeSync.attach(socket);
+        if(socket.handshake.query.syncToken===process.env.HUB_TOKEN) socket.join('notification-bridge');
 		const on=socket.on.bind(socket), edits=require('./config-store').edits;
 		socket.on=(event,listener)=>on(event,(...args)=>{
 			const input=args[0];
@@ -1059,6 +1060,7 @@ io.on("connection", function (socket) {
             deviceName: device.Name, message: data.message, timestamp: now,
             notificationId: require('crypto').randomUUID() };
         for (const {Socket} of ConnectedPhonesList.values()) Socket.emit('DeviceWriteNotification', notification);
+        io.to('notification-bridge').emit('HubNotification', notification);
         socket.emit('DeviceWriteNotification', 'OK');
         LogMsg('DeviceWriteNotification: home=' + device.HomeName + ' device=' + device.DeviceId);
     });
