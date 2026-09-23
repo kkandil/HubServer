@@ -110,7 +110,9 @@ class Accounts {
       ids.add(w.id);
       delete w.currentValue; delete w.lastUpdateTimestamp; delete w.buttonPreviewOn;
     }
-    const doc={_id:home,revision:input.revision+1,widgets:input.widgets};
+    const rooms=input.rooms===undefined?(await this.layouts.findOne({_id:home}))?.rooms||[]:input.rooms;
+    if(!Array.isArray(rooms)||rooms.length>50||rooms.some(r=>typeof r!=='string'||!r.trim()||r.length>40)||new Set(rooms).size!==rooms.length)throw new Error('Invalid rooms');
+    const doc={_id:home,revision:input.revision+1,widgets:input.widgets,rooms};
     if(input.revision===0) {try {await this.layouts.insertOne(doc);} catch(e){if(e.code===11000)throw new Error('Layout changed on another phone. Reload before editing');throw e;}}
     else if(!(await this.layouts.replaceOne({_id:home,revision:input.revision},doc)).matchedCount)throw new Error('Layout changed on another phone. Reload before editing');
     return doc;

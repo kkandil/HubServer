@@ -115,3 +115,18 @@ test('gateway isolates home lists, rejects legacy keys and checks each edit on a
   await accounts.logout(member.token);
   assert.equal((await fetch(url+'/api/me',{headers})).status,401);
 });
+
+test('room tabs persist with shared layouts, enforce permissions and survive older clients',async()=>{
+ const accounts=new Accounts(new MemoryDB()),homes=new Homes();
+ const owner=(await accounts.register({email:'roomowner@example.test',password:'abcdefgh'},homes)).user;
+ const member=(await accounts.register({email:'roommember@example.test',password:'abcdefgh'},homes)).user;
+ await accounts.own(owner,'House');await accounts.share(owner,'House',{email:'roommember@example.test',permissions:{}});
+ await accounts.saveLayout(owner,'House',{revision:0,widgets:[],rooms:['General','Bedroom']});
+ assert.deepEqual((await accounts.layout(member,'House')).rooms,['General','Bedroom']);
+ await assert.rejects(accounts.saveLayout(member,'House',{revision:1,widgets:[],rooms:[]}),/permission/);
+ await accounts.saveLayout(owner,'House',{revision:1,widgets:[]});
+ assert.deepEqual((await accounts.layout(owner,'House')).rooms,['General','Bedroom']);
+ await assert.rejects(accounts.saveLayout(owner,'House',{revision:2,widgets:[],rooms:['General','General']}),/Invalid rooms/);
+ await accounts.saveLayout(owner,'House',{revision:2,widgets:[],rooms:['General']});
+ assert.deepEqual((await accounts.layout(member,'House')).rooms,['General']);
+});
