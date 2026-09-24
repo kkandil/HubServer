@@ -17,7 +17,7 @@ function page(app,local){app.get('/firmware',(_q,r)=>r.sendFile(require('node:pa
 function mountCloud({app,db,accounts,store,hubs}){
  page(app,false);const files=db.collection('firmware'),key=signingKey();
  const router=express.Router();router.use(async(q,r,next)=>{try{q.user=await accounts.authenticate((q.headers.authorization||'').replace(/^Bearer /,''));next();}catch(e){r.status(401).json({error:'Sign in required'});}});
- const allowed=async(q,home)=>{await accounts.require(q.user,home,'devices');};
+ const allowed=async(q,home)=>{if(typeof home!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(home))throw new Error('Invalid home');await accounts.require(q.user,home,'devices');};
  const command=(home,input)=>new Promise((resolve,reject)=>{const h=hubs.get(home);if(!h?.ready)return reject(new Error('Home hub is offline. Upload is saved; install when online.'));h.socket.timeout(20000).emit('FirmwareCommand',input,(error,result)=>error?reject(new Error('Hub did not respond; check status before retrying')):result?.error?reject(new Error(result.error)):resolve(result));});
  router.get('/homes',route(async(q,r)=>{const result=[];for(const h of await store.repo.all()){const p=await accounts.permissions(q.user,h._id);if(p?.devices)result.push({name:h._id,online:!!hubs.get(h._id)?.ready,devices:h.devices.map(d=>({id:d.id,name:d.Name}))});}r.json(result);}));
  router.get('/files',route(async(q,r)=>{await allowed(q,q.query.home);r.json(await files.find({home:q.query.home},{projection:{body:0}}).sort({createdAt:-1}).toArray());}));
@@ -25,18 +25,19 @@ function mountCloud({app,db,accounts,store,hubs}){
  router.delete('/files/:id',route(async(q,r)=>{const f=await files.findOne({id:q.params.id},{projection:{body:0}});if(!f)throw new Error('Firmware not found');await allowed(q,f.home);await files.deleteOne({id:f.id});r.json({ok:true});}));
  router.get('/status',route(async(q,r)=>{await allowed(q,q.query.home);r.json(await command(q.query.home,{action:'status',home:q.query.home}));}));
  router.post('/install',express.json({limit:'2kb'}),route(async(q,r)=>{const {home,deviceID,fileId}=q.body;await allowed(q,home);const doc=await store.repo.get(home);if(!doc?.devices.some(d=>d.id===Number(deviceID)))throw new Error('Device not found');const f=await files.findOne({home,id:fileId});if(!f)throw new Error('Firmware not found');r.json(await command(home,{action:'install',home,deviceID:Number(deviceID),file:{...metadata(f),body:Buffer.from(f.body.buffer).toString('base64')}}));}));
+ router.use((error,q,r,next)=>r.status(error.status===413?413:400).json({error:error.status===413?'Firmware is too large (maximum 1 MB)':'Invalid firmware request'}));
  app.use('/ota',router);
 }
 function mountLocal({app,sql,connections,home,hubToken}){
  page(app,true);sql.exec('CREATE TABLE IF NOT EXISTS ota_files(id TEXT PRIMARY KEY,meta TEXT NOT NULL,body BLOB NOT NULL); CREATE TABLE IF NOT EXISTS ota_jobs(id TEXT PRIMARY KEY,body TEXT NOT NULL)');
  const localKey=process.env.OTA_LOCAL_KEY,signKey=signingKey();
- const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&a.length===b.length&&crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b));
+ const equal=(a,b)=>typeof a==='string'&&typeof b==='string'&&Buffer.byteLength(a)===Buffer.byteLength(b)&&crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b));
  function save(f){sql.prepare('INSERT OR REPLACE INTO ota_files VALUES(?,?,?)').run(f.id,JSON.stringify(metadata(f)),f.body);}
- function jobs(){return sql.prepare('SELECT body FROM ota_jobs ORDER BY rowid DESC LIMIT 30').all().map(x=>JSON.parse(x.body));}
+ function jobs(){return sql.prepare('SELECT body FROM ota_jobs ORDER BY rowid DESC').all().map(x=>JSON.parse(x.body));}
  function put(j){sql.prepare('INSERT OR REPLACE INTO ota_jobs VALUES(?,?)').run(j.id,JSON.stringify(j));}
  for(const job of jobs())if(['installing','reconnecting'].includes(job.state))put({...job,state:'unconfirmed',message:'Hub restarted; waiting for device firmware verification'});
  const timers=new Map(),downloads=new Map();
- function status(){return {jobs:jobs(),devices:[...connections.values()].filter(d=>!home||d.HomeName===home).map(d=>({id:d.DeviceId,name:d.Name,version:d.firmwareVersion||'Unknown',ota:!!d.ota,sketchMD5:d.sketchMD5}))};}
+ function status(){return {jobs:jobs().slice(0,30),devices:[...connections.values()].filter(d=>!home||d.HomeName===home).map(d=>({id:d.DeviceId,name:d.Name,version:d.firmwareVersion||'Unknown',ota:!!d.ota,sketchMD5:d.sketchMD5}))};}
  function install(deviceID,f){
  const d=connections.get(home+'|'+deviceID);if(!d?.Socket.connected)throw new Error('Device is offline');if(!d.ota)throw new Error('Install the OTA-enabled SmartSnap firmware by USB first');
  if(jobs().some(j=>j.deviceID===deviceID&&['installing','reconnecting'].includes(j.state)))throw new Error('This device already has an update in progress');
@@ -54,6 +55,7 @@ function mountLocal({app,sql,connections,home,hubToken}){
  router.post('/upload',express.raw({type:'application/octet-stream',limit:MAX}),route(async(q,r)=>{if(sql.prepare('SELECT count(*) n FROM ota_files').get().n>=30)throw new Error('Remove an old firmware file first');const f=prepare(q.body,q.query.version,signKey);save(f);r.json(metadata(f));}));
  router.delete('/files/:id',route(async(q,r)=>{sql.prepare('DELETE FROM ota_files WHERE id=?').run(q.params.id);r.json({ok:true});}));
  router.post('/install',express.json({limit:'2kb'}),route(async(q,r)=>{const row=sql.prepare('SELECT * FROM ota_files WHERE id=?').get(q.body.fileId);if(!row)throw new Error('Firmware not found');r.json(install(Number(q.body.deviceID),{...JSON.parse(row.meta),body:Buffer.from(row.body)}));}));
+ router.use((error,q,r,next)=>r.status(error.status===413?413:400).json({error:error.status===413?'Firmware is too large (maximum 1 MB)':'Invalid firmware request'}));
  app.use('/ota',router);
  return {command(data){if(data.home!==home)throw new Error('Wrong home');if(data.action==='status')return status();if(data.action!=='install')throw new Error('Unsupported firmware command');const f={...data.file,body:Buffer.from(data.file.body,'base64')};if(f.body.length>MAX+512||hash(f.body)!==f.sha256)throw new Error('Firmware integrity check failed');save(f);return install(Number(data.deviceID),f);},connected(d){for(const j of jobs())if(j.deviceID===d.DeviceId&&['installing','reconnecting','unconfirmed'].includes(j.state)&&d.sketchMD5===j.sketchMD5){put({...j,state:'completed',completedAt:new Date().toISOString()});}},progress(socket,data){const d=[...connections.values()].find(x=>x.Socket===socket);if(!d)return;const j=jobs().find(x=>x.id===data.jobId&&x.deviceID===d.DeviceId);if(!j||j.state==='completed')return;put({...j,state:data.error?'failed':'reconnecting',message:String(data.error||'Firmware received; waiting for verified reboot').slice(0,200)});},close(){for(const t of timers.values())clearTimeout(t);}};
 }
