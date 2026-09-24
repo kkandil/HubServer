@@ -1,7 +1,7 @@
 'use strict';
 const { DatabaseSync } = require('node:sqlite');
 const { EventEngine } = require('./events');
-const edits = new Set(['AddNewHome','DeleteHome','AddDevice','DeleteDevice','AddVariable','DeleteDeviceVariable','SaveEvent','DeleteEvent','SetEventEnabled']);
+const edits = new Set(['AddNewHome','DeleteHome','AddDevice','RenameDevice','DeleteDevice','AddVariable','DeleteDeviceVariable','SaveEvent','DeleteEvent','SetEventEnabled']);
 const reads = new Set(['GetAllHomes','GetAllDevices','GetDeviceVariables','GetEventVariables','GetEvents','GetDeviceStatus']);
 class MongoHomes {
   constructor(db) { this.homes=db.collection('homes'); this.meta=db.collection('meta'); }
@@ -40,6 +40,11 @@ class ConfigStore {
       if(doc.devices.some(d=>d.Name===input.deviceName)) throw new Error('Device name already exists');
       const id=await this.repo.nextId(); if(id>2147483647) throw new Error('Device ID limit reached');
       doc.devices.push({id,Name:input.deviceName,variables:[]}); extra={deviceID:id,deviceName:input.deviceName};
+    } else if(event==='RenameDevice') {
+      if(!device) throw new Error('Device not found');
+      if(!validName(input.deviceName)) throw new Error('Use letters, numbers, underscores or hyphens for the device name');
+      if(doc.devices.some(d=>d.id!==device.id && d.Name===input.deviceName)) throw new Error('Device name already exists');
+      device.Name=input.deviceName;extra={deviceID:device.id,deviceName:device.Name};
     } else if(event==='DeleteDevice') {
       if(!device) throw new Error('Device not found'); doc.devices=doc.devices.filter(d=>d!==device); cascade(device.id); extra={deviceID:device.id,deviceName:device.Name};
     } else if(event==='AddVariable') {

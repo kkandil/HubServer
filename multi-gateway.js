@@ -105,7 +105,7 @@ function createMultiGateway({store,appToken,bindings,accounts,push,db}) {
           try {await authenticate();}catch(e){s.emit('SessionExpired');s.disconnect(true);return;}
           if(trace)console.log(`Phone authentication complete: event=${event} requestId=${input?.requestId} elapsedMs=${Date.now()-received}`);
           if(!['PhoneConnect','GetAllHomes','AddNewHome'].includes(event)) {
-            const permission=event==='DeleteHome'?'home':['AddDevice','DeleteDevice','AddVariable','DeleteDeviceVariable'].includes(event)?'devices':['SaveEvent','DeleteEvent','SetEventEnabled'].includes(event)?'events':['SaveSchedule','DeleteSchedule'].includes(event)?'schedules':null;
+            const permission=event==='DeleteHome'?'home':['AddDevice','RenameDevice','DeleteDevice','AddVariable','DeleteDeviceVariable'].includes(event)?'devices':['SaveEvent','DeleteEvent','SetEventEnabled'].includes(event)?'events':['SaveSchedule','DeleteSchedule'].includes(event)?'schedules':null;
             await accounts.require(s.user,input?.homeName,permission);
           }
         }
@@ -127,7 +127,7 @@ function createMultiGateway({store,appToken,bindings,accounts,push,db}) {
         if(trace)console.log(`Phone request forwarded: event=${event} home=${input?.homeName} requestId=${input?.requestId} gatewayMs=${Date.now()-received}`);
       } catch(e) {
         if(trace)console.log(`Phone request rejected: event=${event} requestId=${input?.requestId} gatewayMs=${Date.now()-received} reason=${e.message}`);
-        const structured=input?.requestId || ['AddDevice','DeleteDevice','DeleteDeviceVariable'].includes(event);
+        const structured=input?.requestId || ['AddDevice','RenameDevice','DeleteDevice','DeleteDeviceVariable'].includes(event);
         s.emit(event,structured?{status:'Error',requestId:input?.requestId,message:e.message}:e.message);
       }
       });

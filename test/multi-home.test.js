@@ -101,3 +101,36 @@ test('two independent hubs, offline edits synchronize before live traffic, recon
   const delivered=await pushArrived;assert.equal(delivered.home,'Germany');assert.equal(delivered.data.message,'No phone socket needed');
 
 });
+
+test('device rename preserves identity, live variable values and automations during hub synchronization',async()=>{
+ const repo=new MemoryHomes(),store=new ConfigStore(repo),h={homeName:'RenameHome'};
+ await store.edit('AddNewHome',h);
+ const d=await store.edit('AddDevice',{...h,deviceName:'Before'});
+ await store.edit('AddDevice',{...h,deviceName:'Taken'});
+ await store.edit('AddVariable',{...h,deviceID:d.deviceID,varName:'V1',varType:'int',varValue:'0'});
+ await store.edit('AddVariable',{...h,deviceID:d.deviceID,varName:'V2',varType:'int',varValue:'0'});
+ await store.edit('SaveEvent',{...h,name:'Rule',enabled:true,conditions:[{deviceID:d.deviceID,varName:'V1',varValue:'1',operator:'='}],actions:[{deviceID:d.deviceID,varName:'V2',varValue:'0'}]});
+ const {SQLiteClient}=require('../sqlite-store'),{HomeSync}=require('../home-sync');
+ const client=new SQLiteClient(':memory:');
+ const engine=new (require('../events').EventEngine)(client.sql,{resolveTarget:async()=>({Type:'int'}),dispatch:async()=>{}});
+ const scheduler=new (require('../scheduler').Scheduler)(client.sql,{resolveTarget:async()=>({Type:'int'}),dispatch:async()=>{}});
+ const connection={HomeName:h.homeName,DeviceId:d.deviceID,Name:'Before',Socket:{disconnect(){}}};
+ const sync=new HomeSync({client,events:engine,scheduler,connections:new Map([[h.homeName+'|'+d.deviceID,connection]]),homeName:h.homeName});
+ try {
+  await sync.apply(await repo.get(h.homeName));
+  await client.db(h.homeName).collection('Var_Before').updateOne({VarName:'V1'},{$set:{Value:'42',ValueRevision:9}});
+  client.sql.prepare('INSERT INTO schedules(id,home,device,variable,body,eligible_after) VALUES(?,?,?,?,?,0)').run('schedule',h.homeName,d.deviceID,'V1',JSON.stringify({deviceID:d.deviceID,varName:'V1'}));
+  const beforeRules=JSON.stringify((await repo.get(h.homeName)).events);
+  await assert.rejects(store.edit('RenameDevice',{...h,deviceID:d.deviceID,deviceName:'Taken'}),/already exists/);
+  await assert.rejects(store.edit('RenameDevice',{...h,deviceID:d.deviceID,deviceName:''}),/letters/);
+  await store.edit('RenameDevice',{...h,deviceID:d.deviceID,deviceName:'After'});
+  assert.equal(JSON.stringify((await repo.get(h.homeName)).events),beforeRules);
+  await sync.apply(await repo.get(h.homeName));
+  const v=await client.db(h.homeName).collection('Var_After').findOne({VarName:'V1'});
+  assert.equal(v.Value,'42');assert.equal(v.ValueRevision,9);
+  assert.equal(connection.Name,'After');
+  assert.equal(client.sql.prepare("SELECT count(*) n FROM collections WHERE name='Var_Before'").get().n,0);
+  assert.equal(client.sql.prepare('SELECT count(*) n FROM schedules').get().n,1);
+  assert.equal((await store.read('GetAllDevices',h,()=>false)).devices.find(x=>x.id===d.deviceID).Name,'After');
+ }finally{await client.close();}
+});

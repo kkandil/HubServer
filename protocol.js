@@ -2,7 +2,7 @@
 
 // Keep the legacy Android/ESP event contract. Devices connect only to the Pi.
 const requests = [
-  'PhoneConnect', 'AddNewHome', 'GetAllHomes', 'DeleteHome', 'AddDevice',
+  'PhoneConnect', 'AddNewHome', 'GetAllHomes', 'DeleteHome', 'AddDevice','RenameDevice',
   'DeleteDevice', 'AddVariable', 'DeleteDeviceVariable', 'PhoneWriteVariable',
   'RequestVariableValue', 'GetVariableValueFromServer', 'GetVariableSnapshot', 'GetDeviceStatus',
   'GetAllDevices', 'GetDeviceVariables', 'GetSchedules', 'SaveSchedule', 'DeleteSchedule',
