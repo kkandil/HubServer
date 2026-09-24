@@ -69,7 +69,12 @@ function createMultiGateway({store,appToken,bindings,accounts,push}) {
       if(hubs.get(name)!==hub || !data || !responses.includes(data.event)) return;
       if(data.payload?.homeName && data.payload.homeName!==name) return;
       if(data.event==='GetAllHomes' || edits.has(data.event) || reads.has(data.event)) return;
-      const phone=phones.get(data.id); if(phone && (!accounts || await accounts.permissions(phone.user,name))) phone.emit(data.event,data.payload);
+      const responseAt=Date.now(), trace=data.event==='GetVariableSnapshot';
+      const phone=phones.get(data.id);
+      if(phone && (!accounts || await accounts.permissions(phone.user,name))) {
+        phone.emit(data.event,data.payload);
+        if(trace)console.log(`Snapshot response forwarded: requestId=${data.payload?.requestId} responseAuthMs=${Date.now()-responseAt}`);
+      }
     }));
     s.on('disconnect',safe(async()=>{if(hubs.get(name)!==hub)return; hubs.delete(name); await store.repo.seen(name); await statuses();}));
   });
@@ -97,6 +102,7 @@ function createMultiGateway({store,appToken,bindings,accounts,push}) {
       try {
         if(accounts) {
           try {await authenticate();}catch(e){s.emit('SessionExpired');s.disconnect(true);return;}
+          if(trace)console.log(`Phone authentication complete: event=${event} requestId=${input?.requestId} elapsedMs=${Date.now()-received}`);
           if(!['PhoneConnect','GetAllHomes','AddNewHome'].includes(event)) {
             const permission=event==='DeleteHome'?'home':['AddDevice','DeleteDevice','AddVariable','DeleteDeviceVariable'].includes(event)?'devices':['SaveEvent','DeleteEvent','SetEventEnabled'].includes(event)?'events':['SaveSchedule','DeleteSchedule'].includes(event)?'schedules':null;
             await accounts.require(s.user,input?.homeName,permission);
