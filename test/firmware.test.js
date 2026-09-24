@@ -19,9 +19,19 @@ test('local OTA rejects unauthenticated upload, offline targets, bad transfers; 
   assert.throws(()=>svc.command({...command,file:{...command.file,sha256:'wrong'}}),/integrity/);
   assert.throws(()=>svc.command(command),/offline/);
   const d={DeviceId:1007,HomeName:'Test',ota:true,Socket:{connected:true,emit:(event,data)=>sent=data}};connections.set('Test|1007',d);
+  assert.throws(()=>svc.command({...command,replaceConfiguration:true}),/First install/);
   const job=svc.command(command);assert.equal(job.state,'installing');assert(sent.path.startsWith('/ota/download/'));
   assert.throws(()=>svc.command(command),/already/);
   svc.connected({...d,sketchMD5:'wrong'});assert.equal(svc.command({action:'status',home:'Test'}).jobs[0].state,'installing');
   svc.connected({...d,sketchMD5:f.sketchMD5});assert.equal(svc.command({action:'status',home:'Test'}).jobs[0].state,'completed');
+  d.otaReplaceConfiguration=true;d.hardwareId='aa:bb:cc:dd:ee:ff';
+  const replacement=svc.command({...command,replaceConfiguration:true});
+  assert.equal(sent.replaceConfiguration,true);assert.equal(sent.sketchMD5,f.sketchMD5);
+  const replacementDevice={...d,DeviceId:2000,sketchMD5:f.sketchMD5};
+  svc.connected(replacementDevice);
+  assert.equal(svc.command({action:'status',home:'Test'}).jobs[0].state,'installing');
+  svc.connected({...replacementDevice,otaCompletedJob:replacement.id});
+  const done=svc.command({action:'status',home:'Test'}).jobs[0];assert.equal(done.state,'completed');assert.equal(done.newDeviceID,2000);
+
  }finally{svc.close();await new Promise(r=>server.close(r));sql.close();}
 });

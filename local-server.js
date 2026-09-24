@@ -771,7 +771,7 @@ io.on("connection", function (socket) {
 				Name: deviceName,
 				HomeName: data['homeName'],
 				DeviceId: deviceId,
-                ota:data.ota===true,firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
+                ota:data.ota===true,otaReplaceConfiguration:data.otaReplaceConfiguration===true,hardwareId:String(data.hardwareId||""),otaCompletedJob:String(data.otaCompletedJob||""),firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
 			});
             firmware.connected(ConnectedDevicesList.get(key));
 
