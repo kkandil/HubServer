@@ -773,13 +773,15 @@ io.on("connection", function (socket) {
 				DeviceId: deviceId,
                 ota:data.ota===true,otaReplaceConfiguration:data.otaReplaceConfiguration===true,hardwareId:String(data.hardwareId||""),otaCompletedJob:String(data.otaCompletedJob||""),firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
 			});
+            await GetDevicesCollection(data.homeName).updateOne({id:deviceId}, {$set:{firmwareVersion:String(data.firmwareVersion||"").trim().slice(0,100)}});
             firmware.connected(ConnectedDevicesList.get(key));
 
 			for (let [phoneId, { Socket }] of ConnectedPhonesList.entries()) {
 				Socket.emit("DeviceStatus", {
 					homeName: data['homeName'],
 					DeviceId: data['deviceID'],
-					DeviceStatus: "Connected"
+					DeviceStatus: "Connected",
+                    firmwareVersion:String(data.firmwareVersion||"").trim().slice(0,100)
 				});
 			}
 
@@ -1266,6 +1268,7 @@ io.on("connection", function (socket) {
 			homeName: data['homeName'],
 			DeviceId: device.id,
 			DeviceStatus: device.Status,
+            firmwareVersion:device.firmwareVersion||"",
 			Time: timeValue 
 		});
 	});

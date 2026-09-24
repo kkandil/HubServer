@@ -78,7 +78,7 @@ class ConfigStore {
     const devices=d.devices.map(device=>{const r=d.runtime?.devices?.find(x=>x.id===device.id)||{}; const status=online(d._id)?(r.Status||'Not_Connected'):'Not_Connected';return {...device,...r,id:device.id,Name:device.Name,Status:status,Time:status==='Connected'?r.ConnectTime||'NA':r.DisconnectTime||r.ConnectTime||'NA'};});
     const device=devices.find(x=>x.id===Number(input.deviceID));
     if(event==='GetAllDevices') return {...header,devices:devices.map(({variables,...d})=>d)};
-    if(event==='GetDeviceStatus') return {...header,deviceID:input.deviceID,DeviceStatus:device?.Status||'Not_Connected',Time:device?.Status==='Connected'?device.ConnectTime||d.lastSeen||'NA':device?.DisconnectTime||device?.ConnectTime||d.lastSeen||'NA'};
+    if(event==='GetDeviceStatus') return {...header,deviceID:input.deviceID,DeviceStatus:device?.Status||'Not_Connected',firmwareVersion:device?.firmwareVersion||'',Time:device?.Status==='Connected'?device.ConnectTime||d.lastSeen||'NA':device?.DisconnectTime||device?.ConnectTime||d.lastSeen||'NA'};
     if(event==='GetDeviceVariables') { if(!device) throw new Error('Device not found'); return {...header,deviceID:device.id,deviceName:device.Name,variables:device.variables}; }
     if(event==='GetEventVariables') return {...header,devices:d.devices.map(x=>({deviceID:x.id,deviceName:x.Name,variables:x.variables.map(v=>({varName:v.VarName,varType:v.Type}))}))};
     if(event==='GetEvents') return {...header,events:d.events.map(r=>({...r,lastRun:d.runtime?.events?.find(x=>x.id===r.id)?.lastRun||null}))};
