@@ -771,7 +771,7 @@ io.on("connection", function (socket) {
 				Name: deviceName,
 				HomeName: data['homeName'],
 				DeviceId: deviceId,
-                ota:data.ota===true,otaReplaceConfiguration:data.otaReplaceConfiguration===true,hardwareId:String(data.hardwareId||""),otaCompletedJob:String(data.otaCompletedJob||""),firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
+                ota:data.ota===true,otaDeviceId:data.otaDeviceId===true,otaReplaceConfiguration:data.otaReplaceConfiguration===true,hardwareId:String(data.hardwareId||""),otaCompletedJob:String(data.otaCompletedJob||""),firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
 			});
             await GetDevicesCollection(data.homeName).updateOne({id:deviceId}, {$set:{firmwareVersion:String(data.firmwareVersion||"").trim().slice(0,100)}});
             firmware.connected(ConnectedDevicesList.get(key));
