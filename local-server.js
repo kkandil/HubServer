@@ -485,7 +485,7 @@ async function GetAllDevices(homeName) {
 
 		const devicesCol = GetDevicesCollection(homeName);
 		const devices = await devicesCol
-			.find({}, { projection: { _id: 0, Name: 1, id: 1, Status: 1 } })
+			.find({}, { projection: { _id: 0, Name: 1, id: 1, Status: 1, firmwareVersion: 1 } })
 			.toArray();
 
 		if (!devices || devices.length === 0) {
