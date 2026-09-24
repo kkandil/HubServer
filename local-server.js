@@ -5,6 +5,7 @@ var app = require('express')();
 var server = require('http').Server(app);
 const io = require('socket.io')(server, {
 	allowEIO3: true,
+    maxHttpBufferSize:2000000,
 	pingTimeout: 60000,
 	pingInterval: 25000
 });
@@ -61,6 +62,8 @@ const events = new EventEngine(client.sql, {
 	}
 });
 const homeSync=process.env.HUB_HOME?new (require('./home-sync').HomeSync)({client,events,scheduler,connections:ConnectedDevicesList,homeName:process.env.HUB_HOME,token:process.env.HUB_TOKEN}):null;
+
+const firmware=require('./firmware').mountLocal({app,sql:client.sql,connections:ConnectedDevicesList,home:process.env.HUB_HOME,hubToken:process.env.HUB_TOKEN});
 
 function GetMetaDb() {
 	return client.db("SmartHomeMeta");
@@ -582,6 +585,7 @@ run().then(() => server.listen(PORT, process.env.BIND_ADDRESS || '0.0.0.0', () =
 })).catch(error => { console.error(error); process.exit(1); });
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
+	firmware.close();
 	scheduler.stop();
 	if (bridge) bridge.close();
 	io.close(() => client.close().then(() => process.exit(0)));
@@ -591,6 +595,11 @@ for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
 // socket.IO
 
 io.on("connection", function (socket) {
+    socket.on('FirmwareCommand',(data,ack)=>{
+        if(typeof ack!=='function'||!process.env.HUB_TOKEN||socket.handshake.query.syncToken!==process.env.HUB_TOKEN)return;
+        try{ack(firmware.command(data));}catch(e){ack({error:e.message});}
+    });
+    socket.on('DeviceOTAStatus',data=>firmware.progress(socket,data||{}));
 	if(homeSync) {
 		homeSync.attach(socket);
         if(socket.handshake.query.syncToken===process.env.HUB_TOKEN) socket.join('notification-bridge');
@@ -761,8 +770,10 @@ io.on("connection", function (socket) {
 				Socket: socket,
 				Name: deviceName,
 				HomeName: data['homeName'],
-				DeviceId: deviceId
+				DeviceId: deviceId,
+                ota:data.ota===true,firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
 			});
+            firmware.connected(ConnectedDevicesList.get(key));
 
 			for (let [phoneId, { Socket }] of ConnectedPhonesList.entries()) {
 				Socket.emit("DeviceStatus", {

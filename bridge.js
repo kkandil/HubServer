@@ -21,6 +21,11 @@ function startBridge({ gatewayUrl, hubToken, localUrl, homeName }) {
     });
   };
   hub.on('HomeConfig',applyConfig);
+  hub.on('FirmwareCommand',(data,ack)=>{
+    if(typeof ack!=='function')return;
+    if(!syncSocket?.connected)return ack({error:'Local hub unavailable'});
+    syncSocket.timeout(15000).emit('FirmwareCommand',data,(error,result)=>ack(error?{error:'Local firmware service timed out'}:result));
+  });
   if(syncSocket) {
     syncSocket.on('connect',()=>{if(pendingConfig)applyConfig(pendingConfig);});
     syncSocket.on('disconnect',()=>hub.emit('LocalUnavailable'));

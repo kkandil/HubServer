@@ -95,7 +95,7 @@ if (require.main === module) {
       const {PushNotifications,firebaseMessaging}=require('./push-notifications');
       const push=accounts?new PushNotifications({db,accounts,store,messaging:firebaseMessaging()}):null;
       if(push)await push.init();
-      gateway=require('./multi-gateway').createMultiGateway({store,push,appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}'),accounts});
+      gateway=require('./multi-gateway').createMultiGateway({store,push,db,appToken:process.env.APP_TOKEN,bindings:JSON.parse(process.env.HUB_BINDINGS||'{}'),accounts});
     } else gateway=createGateway({ hubToken: process.env.HUB_TOKEN, appToken: process.env.APP_TOKEN });
     gateway.server.listen(Number(process.env.PORT || 3000), () => console.log('SmartHome gateway listening'));
   })().catch(e=>{console.error('Gateway startup failed:',e.message);process.exit(1);});

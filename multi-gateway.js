@@ -3,10 +3,11 @@ const {timingSafeEqual}=require('node:crypto');
 const {requests,responses}=require('./protocol');
 const {edits,reads}=require('./config-store');
 const same=(a,b)=>typeof a==='string' && typeof b==='string' && Buffer.byteLength(a)===Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a),Buffer.from(b));
-function createMultiGateway({store,appToken,bindings,accounts,push}) {
+function createMultiGateway({store,appToken,bindings,accounts,push,db}) {
   const app=require('express')(), server=require('node:http').createServer(app);
-  const io=require('socket.io')(server,{allowEIO3:true,pingTimeout:30000,maxHttpBufferSize:1000000});
+  const io=require('socket.io')(server,{allowEIO3:true,pingTimeout:30000,maxHttpBufferSize:2000000});
   const hubs=new Map(), phones=new Map();
+  if(db && accounts)require('./firmware').mountCloud({app,db,accounts,store,hubs});
   const online=name=>!!hubs.get(name)?.ready;
   const safe=fn=>(...args)=>Promise.resolve().then(()=>fn(...args)).catch(e=>console.error('Gateway:',e.message));
   async function homesFor(s) {
