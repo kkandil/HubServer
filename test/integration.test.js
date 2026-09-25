@@ -48,9 +48,9 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
     await gateway.close();
     rmSync(dir, { recursive: true, force: true });
   });
-  async function boot() {
+  async function boot(accounts = false) {
     const child = spawn(process.execPath, [path.join(__dirname, '../local-server.js')], {
-      env: { ...process.env, PORT: String(localPort), DATA_FILE: path.join(dir, 'db.sqlite'), GATEWAY_URL: '' },
+      env: { ...process.env, PORT: String(localPort), DATA_FILE: path.join(dir, 'db.sqlite'), GATEWAY_URL: '', ...(accounts ? {HUB_HOME:'TestHome',HUB_TOKEN:'hub-test-secret',ACCOUNTS_ENABLED:'true'} : {}) },
       stdio: ['ignore', 'pipe', 'pipe']
     });
     children.push(child);
@@ -176,6 +176,40 @@ test('legacy protocol works locally and through gateway; outages, auth, persiste
   const persistedEvents = await request(remote, 'GetEvents', { homeName: 'TestHome', requestId: 'events-list' });
   assert.equal(persistedEvents.events.length, 1); assert.equal(persistedEvents.events[0].lastRun.status, 'sent');
   assert.equal((await request(remote, 'SetEventEnabled', { homeName: 'TestHome', id: eventSaved.event.id, enabled: false })).status, 'OK');
+  // Disconnected-device writes are opt-in and acknowledged only after persistence.
+  for (const flag of [undefined, false, "true"]) {
+    const rejected = await request(remote, 'PhoneWriteVariable', {...target, varType:'int', varValue:'88', enableOfflineWrite:flag, requestId:'offline-reject'});
+    assert.equal(rejected.message, 'Device_Not_Connected');
+    assert.equal((await request(remote, 'GetVariableValueFromServer', target)).Value, '4');
+  }
+  const offlinePush = waitEvent(remote2, 'DeviceWriteVariable', x => x.varName === 'power' && x.varValue === '77');
+  const saved = await request(remote, 'PhoneWriteVariable', {...target, varType:'int', varValue:'77', enableOfflineWrite:true, requestId:'offline-save'});
+  assert.equal(saved.status, 'OK'); assert.equal(saved.savedOffline, true);
+  assert.equal(saved.varValue, '77'); assert.equal(saved.requestId, 'offline-save');
+  assert.equal((await offlinePush).revision, saved.revision);
+  // The offline value survives a Pi service restart before the device returns.
+  bridge.close();
+  const currentChild = children[children.length - 1];
+  const stopped = new Promise(resolve => currentChild.once('exit', resolve)); currentChild.kill(); await stopped;
+  await boot(true);
+  ready = waitEvent(remote, 'HubStatus', x => x.online);
+  bridge = startBridge({ gatewayUrl, hubToken: 'hub-test-secret', localUrl }); await ready;
+  assert.equal((await request(remote, 'GetVariableValueFromServer', target)).Value, '77');
+  const reconnecting = socket(localUrl); sockets.push(reconnecting); await waitEvent(reconnecting, 'connect');
+  assert.equal(await request(reconnecting, 'DeviceConnect', target), 'OK');
+  assert.equal((await request(reconnecting, 'GetVariableValueFromServer', target)).Value, '77');
+  const stranger = socket(localUrl); sockets.push(stranger); await waitEvent(stranger, 'connect');
+  assert.equal((await request(stranger, 'GetVariableValueFromServer', target)).status, 'Error');
+  assert.equal((await request(reconnecting, 'GetVariableValueFromServer', {...target,deviceID:id+1})).status, 'Error');
+  assert.equal((await request(reconnecting, 'GetVariableValueFromServer', {...target,homeName:'OtherHome'})).status, 'Error');
+  assert.equal((await request(reconnecting, 'GetAllDevices', target)).status, 'Error');
+
+  bridge.close();
+  const securedChild = children[children.length - 1];
+  const securedStopped = new Promise(resolve => securedChild.once('exit', resolve)); securedChild.kill(); await securedStopped;
+  await boot();
+  ready = waitEvent(remote, 'HubStatus', x => x.online);
+  bridge = startBridge({ gatewayUrl, hubToken: 'hub-test-secret', localUrl }); await ready;
   assert.equal((await request(remote, 'DeleteDeviceVariable', target)).status, 'OK');
   assert.equal((await request(remote, 'GetSchedules', { ...target, requestId: 'list-3' })).schedules.length, 0);
   assert.equal((await request(remote, 'GetEvents', { homeName: 'TestHome' })).events.length, 0);

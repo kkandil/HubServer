@@ -606,8 +606,12 @@ io.on("connection", function (socket) {
 		const on=socket.on.bind(socket), edits=require('./config-store').edits;
 		socket.on=(event,listener)=>on(event,(...args)=>{
 			const input=args[0];
+			// Firmware may read only its own saved variables after DeviceConnect.
+            const registered = event==='GetVariableValueFromServer' && input
+                ? ConnectedDevicesList.get(MakeConnectedDeviceKey(input.homeName,input.deviceID)) : null;
+            const ownDeviceRead = registered && registered.Socket===socket;
 			if(process.env.ACCOUNTS_ENABLED==='true' && require('./protocol').requests.includes(event)
-				&& socket.handshake.query.gatewayToken!==process.env.HUB_TOKEN) {
+				&& socket.handshake.query.gatewayToken!==process.env.HUB_TOKEN && !ownDeviceRead) {
 				return socket.emit(event,{status:'Error',requestId:input?.requestId,message:'Sign in through the home gateway'});
 			}
 			if(event==='GetAllHomes') return socket.emit(event,{homes:[process.env.HUB_HOME],homeStatuses:[{homeName:process.env.HUB_HOME,online:true}]});
@@ -756,7 +760,6 @@ io.on("connection", function (socket) {
 		const [result, deviceName, deviceId, Status] = await SearchForDeviceByID(data['homeName'], data['deviceID']);
 
 		if (result == 1) {
-			socket.emit('DeviceConnect', "OK");
 			await UpdateDeviceStatus(data['homeName'], deviceId, "Connected");
 			await UpdateDeviceConnectionTimes(data['homeName'], deviceId, "connect");
 			
@@ -773,6 +776,7 @@ io.on("connection", function (socket) {
 				DeviceId: deviceId,
                 ota:data.ota===true,otaDeviceId:data.otaDeviceId===true,otaReplaceConfiguration:data.otaReplaceConfiguration===true,hardwareId:String(data.hardwareId||""),otaCompletedJob:String(data.otaCompletedJob||""),firmwareVersion:String(data.firmwareVersion||""),sketchMD5:String(data.sketchMD5||"")
 			});
+            socket.emit('DeviceConnect', "OK"); // Registration is ready before firmware can request values.
             await GetDevicesCollection(data.homeName).updateOne({id:deviceId}, {$set:{firmwareVersion:String(data.firmwareVersion||"").trim().slice(0,100)}});
             firmware.connected(ConnectedDevicesList.get(key));
 
@@ -1018,7 +1022,8 @@ io.on("connection", function (socket) {
 			if (varResult == 1) {
 				const key = MakeConnectedDeviceKey(data['homeName'], Id);
 
-				if (ConnectedDevicesList.has(key)) {
+				const savedOffline = !ConnectedDevicesList.has(key);
+				if (!savedOffline) {
 					ConnectedDevicesList.get(key)['Socket'].emit('PhoneWriteVariable', {
 						homeName: data['homeName'],
 						varName: data['varName'],
@@ -1028,12 +1033,12 @@ io.on("connection", function (socket) {
 
 					
 				}
-				else {
+				else if (data.enableOfflineWrite !== true) {
 					reply("Device_Not_Connected"); return;
 				}
 
 				const update=await UpdateVariableValue(data['homeName'], DeviceName, data['varName'], data['varValue']);
-				reply(typeof update==='object'?'OK':'Server_Error',typeof update==='object'?update:undefined);
+				reply(typeof update==='object'?'OK':'Server_Error',typeof update==='object'?{...update,savedOffline}:undefined);
 
 				LogMsg("PhoneWriteVariable: homeName=" + data['homeName'] +
 					", devId=" + data['deviceID'] +
